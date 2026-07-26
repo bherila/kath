@@ -24,8 +24,6 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - name: Build frontend and run tests
         run: |
@@ -54,8 +52,6 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - name: Build frontend
         run: |

@@ -1,5 +1,13 @@
 overrides:
   glob: ">=10.5.0"
 
+# pnpm 10 reads `onlyBuiltDependencies`; pnpm 11 reads `allowBuilds` instead and
+# ignores the former. Both list the same packages so the approval survives a
+# pnpm major bump — without it, installs fail closed with ERR_PNPM_IGNORED_BUILDS.
 onlyBuiltDependencies:
+  - esbuild
   - unrs-resolver
+
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
