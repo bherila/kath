@@ -89,10 +89,23 @@ jobs:
             artisan \
             composer.json \
             composer.lock \
-            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/laravel/
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/kath-laravel/
 
+      # NOTE: this site is a SUBDOMAIN on a shared cPanel account, not the account's main
+      # site. The template this repo came from assumed the opposite and rebuilt the webroot
+      # symlink on every deploy with:
+      #
+      #     cd ~ && rm -rf public_html && rm -rf web && ln -s laravel/public public_html
+      #
+      # On this account ~/public_html is herila.net's document root. It holds the
+      # herila.net -> bherila.net redirect and the .well-known/acme-challenge directory
+      # AutoSSL renews against, so that step would have deleted both and repointed the
+      # apex at this app. It is removed deliberately — do not reinstate it.
+      #
+      # The webroot symlink (~/katherine.herila.net -> kath-laravel/public) is provisioned
+      # once and is not deploy-managed.
       - name: Run artisan config clear/cache on server
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "cd ~/laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache && cd ~ && rm -rf public_html && rm -rf web && ln -s laravel/public public_html && ln -s laravel/public web"
+            "cd ~/kath-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache"
