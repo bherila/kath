@@ -1,0 +1,98 @@
+name: Deploy to Production
+
+# Manual trigger ONLY. Do not add a `push` trigger here: on a sibling site a
+# deploy job that fired on push to main deployed to production unprompted the
+# moment its secrets existed. No deploy secrets exist for this repo yet, and
+# the `deploy` job below is additionally gated on the `prod` environment plus
+# the DEPLOY_ENABLED repo/environment variable.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+
+      - name: Install Composer (with dev)
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend and run tests
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm run test
+
+      - name: Run PHPUnit
+        run: vendor/bin/phpunit --configuration phpunit.xml
+
+  deploy:
+    runs-on: ubuntu-24.04-arm
+    needs: test
+    environment: prod
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+
+      - name: Install Composer (no dev)
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Build frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Append to .htaccess
+        run: cat htaccess-append.txt >> public/.htaccess
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy with rsync
+        run: |
+          rsync -av --delete --exclude='.env' \
+            -e "ssh -o StrictHostKeyChecking=yes" \
+            app \
+            bootstrap \
+            config \
+            database \
+            public \
+            resources \
+            routes \
+            storage \
+            vendor \
+            artisan \
+            composer.json \
+            composer.lock \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/laravel/
+
+      - name: Run artisan config clear/cache on server
+        run: |
+          ssh -o StrictHostKeyChecking=yes \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "cd ~/laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache && cd ~ && rm -rf public_html && rm -rf web && ln -s laravel/public public_html && ln -s laravel/public web"
