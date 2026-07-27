@@ -11,7 +11,7 @@ Laravel + React starter, with all of that stripped out.
 
 ## Tech Stack
 
-- **Backend**: Laravel 12 on PHP ^8.2 (CI runs on PHP 8.5)
+- **Backend**: Laravel 13 on PHP 8.3–8.5 (CI runs on PHP 8.5)
 - **Frontend**: React 19 with TypeScript
 - **UI Components**: shadcn-style components backed by Base UI primitives
 - **Styling**: Tailwind CSS v4
@@ -22,7 +22,7 @@ Laravel + React starter, with all of that stripped out.
 
 ### Prerequisites
 
-- PHP 8.2 or higher
+- PHP 8.3 through 8.5
 - Composer
 - Node.js 20.19+ or 22.12+
 - pnpm

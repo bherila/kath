@@ -8,7 +8,7 @@ Make the smallest coherent change that solves the problem. Include adjacent low-
 
 ## Project shape
 
-- **Stack**: Laravel 12 on PHP ^8.2, React 19 + TypeScript, Vite, Tailwind CSS v4.
+- **Stack**: Laravel 13 on PHP 8.3–8.5, React 19 + TypeScript, Vite, Tailwind CSS v4.
 - **Package manager**: pnpm — never use npm or npx directly.
 - **Database**: no domain tables exist yet (`database/migrations/` is empty). Tests use SQLite in-memory regardless.
 - **Dependency management**: Composer (PHP) + pnpm (JS). Do not mix.
