@@ -6597,16 +6597,16 @@
         },
         {
             "name": "laravel/pint",
-            "version": "v1.29.3",
+            "version": "v1.30.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/pint.git",
-                "reference": "da1d1111a6aa2e082d2a388b194afe1ba0a05d14"
+                "reference": "fe4148c503a0e266353d61396b79bbf7f35122df"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/pint/zipball/da1d1111a6aa2e082d2a388b194afe1ba0a05d14",
-                "reference": "da1d1111a6aa2e082d2a388b194afe1ba0a05d14",
+                "url": "https://api.github.com/repos/laravel/pint/zipball/fe4148c503a0e266353d61396b79bbf7f35122df",
+                "reference": "fe4148c503a0e266353d61396b79bbf7f35122df",
                 "shasum": ""
             },
             "require": {
@@ -6614,17 +6614,19 @@
                 "ext-mbstring": "*",
                 "ext-tokenizer": "*",
                 "ext-xml": "*",
-                "php": "^8.2.0"
+                "php": "^8.3.0"
             },
             "require-dev": {
-                "friendsofphp/php-cs-fixer": "^3.95.8",
-                "illuminate/view": "^12.62.0",
+                "composer/semver": "^3.4.4",
+                "friendsofphp/php-cs-fixer": "^3.95.18",
+                "illuminate/view": "^13.24.0",
                 "larastan/larastan": "^3.10.0",
-                "laravel-zero/framework": "^12.1.0",
+                "laravel-zero/framework": "^13.0.0",
                 "laravel/agent-detector": "^2.0.2",
+                "laravel/prompts": "^0.3.22",
                 "mockery/mockery": "^1.6.12",
                 "nunomaduro/termwind": "^2.4.0",
-                "pestphp/pest": "^3.8.6"
+                "pestphp/pest": "^4.7.8"
             },
             "bin": [
                 "builds/pint"
@@ -6661,33 +6663,32 @@
                 "issues": "https://github.com/laravel/pint/issues",
                 "source": "https://github.com/laravel/pint"
             },
-            "time": "2026-06-16T15:34:04+00:00"
+            "time": "2026-08-10T15:35:50+00:00"
         },
         {
             "name": "mockery/mockery",
-            "version": "1.6.12",
+            "version": "1.6.13",
             "source": {
                 "type": "git",
                 "url": "https://github.com/mockery/mockery.git",
-                "reference": "1f4efdd7d3beafe9807b08156dfcb176d18f1699"
+                "reference": "9cb54414cdcd2ec5ca292e7ba19dba3a3444885d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/mockery/mockery/zipball/1f4efdd7d3beafe9807b08156dfcb176d18f1699",
-                "reference": "1f4efdd7d3beafe9807b08156dfcb176d18f1699",
+                "url": "https://api.github.com/repos/mockery/mockery/zipball/9cb54414cdcd2ec5ca292e7ba19dba3a3444885d",
+                "reference": "9cb54414cdcd2ec5ca292e7ba19dba3a3444885d",
                 "shasum": ""
             },
             "require": {
-                "hamcrest/hamcrest-php": "^2.0.1",
-                "lib-pcre": ">=7.0",
+                "hamcrest/hamcrest-php": "^2.0 || ^3.0",
                 "php": ">=7.3"
             },
             "conflict": {
                 "phpunit/phpunit": "<8.0"
             },
             "require-dev": {
-                "phpunit/phpunit": "^8.5 || ^9.6.17",
-                "symplify/easy-coding-standard": "^12.1.14"
+                "phpunit/phpunit": "^9.6.36",
+                "symplify/easy-coding-standard": "^13.2.17"
             },
             "type": "library",
             "autoload": {
@@ -6744,7 +6745,7 @@
                 "security": "https://github.com/mockery/mockery/security/advisories",
                 "source": "https://github.com/mockery/mockery"
             },
-            "time": "2024-05-16T03:13:13+00:00"
+            "time": "2026-08-15T03:07:32+00:00"
         },
         {
             "name": "myclabs/deep-copy",
@@ -7424,16 +7425,16 @@
         },
         {
             "name": "phpunit/phpunit",
-            "version": "12.5.32",
+            "version": "12.5.33",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/phpunit.git",
-                "reference": "c02591dd7840ed124a98d7770753329ad28e9f8f"
+                "reference": "b98e028a26c5c5ba7e4a54be96ccf35f2914d184"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/c02591dd7840ed124a98d7770753329ad28e9f8f",
-                "reference": "c02591dd7840ed124a98d7770753329ad28e9f8f",
+                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/b98e028a26c5c5ba7e4a54be96ccf35f2914d184",
+                "reference": "b98e028a26c5c5ba7e4a54be96ccf35f2914d184",
                 "shasum": ""
             },
             "require": {
@@ -7502,7 +7503,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/phpunit/issues",
                 "security": "https://github.com/sebastianbergmann/phpunit/security/policy",
-                "source": "https://github.com/sebastianbergmann/phpunit/tree/12.5.32"
+                "source": "https://github.com/sebastianbergmann/phpunit/tree/12.5.33"
             },
             "funding": [
                 {
@@ -7510,7 +7511,7 @@
                     "type": "other"
                 }
             ],
-            "time": "2026-07-25T06:54:13+00:00"
+            "time": "2026-07-28T13:58:09+00:00"
         },
         {
             "name": "sebastian/cli-parser",
