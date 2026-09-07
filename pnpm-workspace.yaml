@@ -6,8 +6,10 @@ overrides:
 # pnpm major bump — without it, installs fail closed with ERR_PNPM_IGNORED_BUILDS.
 onlyBuiltDependencies:
   - esbuild
+  - spotlight-noindex
   - unrs-resolver
 
 allowBuilds:
   esbuild: true
+  spotlight-noindex: true
   unrs-resolver: true
