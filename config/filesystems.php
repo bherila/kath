@@ -60,9 +60,10 @@ return [
             'report' => false,
         ],
 
-        // Cloudflare R2 (S3-compatible), for future photo/video blog assets.
-        // Not wired up to any feature yet — the bucket is being provisioned
-        // separately.
+        // Cloudflare R2 (S3-compatible). Private bucket holding original
+        // uploads and their client-generated derivatives; the browser reaches
+        // objects only through short-lived presigned URLs. Video originals live
+        // under the prefix the HLS transcoder scans (see config/wedding.php).
         'r2' => [
             'driver' => 's3',
             'key' => env('KATH_R2_ACCESS_KEY_ID'),
@@ -70,6 +71,21 @@ return [
             'region' => env('KATH_R2_REGION', 'auto'),
             'bucket' => env('KATH_R2_BUCKET'),
             'url' => env('KATH_R2_URL'),
+            'endpoint' => env('KATH_R2_ENDPOINT'),
+            'use_path_style_endpoint' => env('KATH_R2_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ],
+
+        // HLS output written by the out-of-band s3-hls transcoder: content-
+        // addressed `by-id/<contentId>/…` trees plus `mappings/<sourceKey>.json`.
+        // The app only reads it; credentials default to the r2 disk's.
+        'r2_hls' => [
+            'driver' => 's3',
+            'key' => env('KATH_R2_HLS_ACCESS_KEY_ID', env('KATH_R2_ACCESS_KEY_ID')),
+            'secret' => env('KATH_R2_HLS_SECRET_ACCESS_KEY', env('KATH_R2_SECRET_ACCESS_KEY')),
+            'region' => env('KATH_R2_REGION', 'auto'),
+            'bucket' => env('KATH_R2_HLS_BUCKET'),
             'endpoint' => env('KATH_R2_ENDPOINT'),
             'use_path_style_endpoint' => env('KATH_R2_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
