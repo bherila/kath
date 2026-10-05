@@ -7,7 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name') }}</title>
     <meta name="color-scheme" content="dark light">
-    <script>
+    <script @cspNonce>
       (function() {
         try {
           var theme = localStorage.getItem('theme') || 'system';
@@ -19,7 +19,7 @@
     </script>
     @vite(['resources/css/app.css', 'resources/js/navbar.tsx'])
     @stack('head')
-    <script>(_=>{let a})()</script>
+    <script @cspNonce>(_=>{let a})()</script>
   </head>
   <body class="min-h-screen flex flex-col">
     <header class="site-header border-b border-gray-200 dark:border-[#3E3E3A] h-14">
