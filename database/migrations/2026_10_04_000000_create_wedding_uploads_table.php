@@ -18,6 +18,10 @@ return new class extends Migration
             $table->string('guest_email');
             $table->string('guest_name', 60)->nullable();
             $table->char('guest_token_hash', 64);
+            // Client IP and bytes reserved at presign time, for the daily
+            // upload quota (session tokens are free to mint, IPs are not).
+            $table->string('uploader_ip', 45)->nullable();
+            $table->unsignedBigInteger('reserved_bytes')->default(0);
 
             $table->string('kind', 10); // photo | video
             $table->string('status', 10)->default('pending'); // pending | ready | hidden
@@ -46,6 +50,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['status', 'id']);
+            $table->index('created_at');
+            $table->index(['uploader_ip', 'created_at']);
         });
     }
 

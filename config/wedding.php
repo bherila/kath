@@ -45,6 +45,16 @@ return [
         'video' => ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp', 'video/x-m4v'],
     ],
 
+    // Daily byte quotas, reserved at presign time (each presigned PUT is bound
+    // to its declared size). They can't be reset by re-entering an email: one
+    // is global, the other per client IP — generous, since a whole venue may
+    // share one Wi-Fi address. Days run midnight to midnight in `timezone`.
+    'daily_quota' => [
+        'timezone' => 'America/Los_Angeles',
+        'total_bytes' => (int) env('WEDDING_DAILY_QUOTA_BYTES', 100 * 1024 ** 3),
+        'per_ip_bytes' => (int) env('WEDDING_DAILY_QUOTA_PER_IP_BYTES', 25 * 1024 ** 3),
+    ],
+
     // A pending (not yet completed) upload holds its file hash against other
     // guests' duplicates only this long, so an abandoned upload can't block a
     // file forever.

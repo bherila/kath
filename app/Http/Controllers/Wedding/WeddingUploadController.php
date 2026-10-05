@@ -9,6 +9,7 @@ use App\Http\Requests\Wedding\CompleteWeddingMultipartRequest;
 use App\Http\Requests\Wedding\PresignWeddingUploadPartsRequest;
 use App\Http\Requests\Wedding\StoreWeddingUploadRequest;
 use App\Models\WeddingUpload;
+use App\Services\Wedding\UploadQuotaExceeded;
 use App\Services\Wedding\WeddingUploadService;
 use App\Support\WeddingGuest;
 use Illuminate\Http\JsonResponse;
@@ -43,17 +44,22 @@ class WeddingUploadController extends Controller
             ], 409);
         }
 
-        $result = $this->uploads->createPendingUpload(
-            $guest,
-            $request->kind(),
-            (string) $request->validated('filename'),
-            (string) $request->validated('content_type'),
-            (int) $request->validated('size'),
-            $fileHash,
-            $request->validated('perceptual_hash'),
-            $request->validated('display_size') !== null ? (int) $request->validated('display_size') : null,
-            $request->validated('thumbnail_size') !== null ? (int) $request->validated('thumbnail_size') : null,
-        );
+        try {
+            $result = $this->uploads->createPendingUpload(
+                $guest,
+                $request->kind(),
+                (string) $request->validated('filename'),
+                (string) $request->validated('content_type'),
+                (int) $request->validated('size'),
+                $fileHash,
+                $request->validated('perceptual_hash'),
+                $request->validated('display_size') !== null ? (int) $request->validated('display_size') : null,
+                $request->validated('thumbnail_size') !== null ? (int) $request->validated('thumbnail_size') : null,
+                (string) $request->ip(),
+            );
+        } catch (UploadQuotaExceeded $e) {
+            return response()->json(['message' => $e->getMessage(), 'quota_exceeded' => true], 429);
+        }
 
         $upload = $result['upload'];
 

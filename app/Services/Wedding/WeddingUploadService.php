@@ -105,6 +105,7 @@ class WeddingUploadService
         ?string $perceptualHash,
         ?int $displayBytes,
         ?int $thumbnailBytes,
+        string $clientIp,
     ): array {
         // The same guest retrying a file supersedes their own abandoned attempt.
         if ($fileHash !== null) {
@@ -124,11 +125,14 @@ class WeddingUploadService
         // Only photos get a display copy; videos play via HLS.
         $displayBytes = $kind === WeddingUpload::KIND_PHOTO ? $displayBytes : null;
 
-        $upload = WeddingUpload::query()->create([
+        $reservedBytes = $sizeBytes + ($displayBytes ?? 0) + ($thumbnailBytes ?? 0);
+        $attributes = [
             'ulid' => $ulid,
             'guest_email' => $guest->email,
             'guest_name' => $guest->name,
             'guest_token_hash' => $guest->tokenHash(),
+            'uploader_ip' => $clientIp,
+            'reserved_bytes' => $reservedBytes,
             'kind' => $kind,
             'status' => WeddingUpload::STATUS_PENDING,
             'object_key' => $prefix.'/'.$ulid.'.'.$this->extensionFor($filename, $mimeType),
@@ -139,7 +143,15 @@ class WeddingUploadService
             'expected_size_bytes' => $sizeBytes,
             'file_hash' => $fileHash,
             'perceptual_hash' => $kind === WeddingUpload::KIND_PHOTO ? $perceptualHash : null,
-        ]);
+        ];
+
+        // Check and reserve under one lock so concurrent presigns can't both
+        // squeeze under the cap.
+        $upload = Cache::lock('wedding.upload-quota', 10)->block(5, function () use ($attributes, $clientIp, $reservedBytes): WeddingUpload {
+            $this->assertWithinDailyQuota($clientIp, $reservedBytes);
+
+            return WeddingUpload::query()->create($attributes);
+        });
 
         $ttl = (int) config('wedding.upload_url_ttl');
         // Each URL is bound to its exact byte length. A multipart upload
@@ -157,6 +169,26 @@ class WeddingUploadService
                 ? $this->storage->getSignedUploadUrl($this->disk(), $upload->thumbnail_key, self::DERIVATIVE_MIME, (int) $thumbnailBytes, $ttl)
                 : null,
         ];
+    }
+
+    /**
+     * Bytes reserved today (in the quota's timezone) by every upload still on
+     * record. Discarded uploads free their reservation; hidden ones keep it.
+     *
+     * @throws UploadQuotaExceeded
+     */
+    private function assertWithinDailyQuota(string $clientIp, int $bytes): void
+    {
+        $since = now((string) config('wedding.daily_quota.timezone'))->startOfDay()->utc();
+        $today = WeddingUpload::query()->where('created_at', '>=', $since);
+
+        if ((clone $today)->sum('reserved_bytes') + $bytes > (int) config('wedding.daily_quota.total_bytes')) {
+            throw new UploadQuotaExceeded('We\'ve reached today\'s upload limit for the gallery. Please try again tomorrow.');
+        }
+
+        if ((clone $today)->where('uploader_ip', $clientIp)->sum('reserved_bytes') + $bytes > (int) config('wedding.daily_quota.per_ip_bytes')) {
+            throw new UploadQuotaExceeded('Your network has reached today\'s upload limit. Please try again tomorrow.');
+        }
     }
 
     public function usesMultipart(WeddingUpload $upload): bool

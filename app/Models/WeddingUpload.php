@@ -15,6 +15,8 @@ use Illuminate\Support\Carbon;
  * @property string $guest_email
  * @property ?string $guest_name
  * @property string $guest_token_hash
+ * @property ?string $uploader_ip
+ * @property int $reserved_bytes
  * @property string $kind
  * @property string $status
  * @property string $object_key
@@ -54,6 +56,8 @@ class WeddingUpload extends Model
         'guest_email',
         'guest_name',
         'guest_token_hash',
+        'uploader_ip',
+        'reserved_bytes',
         'kind',
         'status',
         'object_key',
@@ -70,6 +74,7 @@ class WeddingUpload extends Model
     protected $hidden = [
         'guest_email',
         'guest_token_hash',
+        'uploader_ip',
         'multipart_upload_id',
     ];
 
@@ -78,6 +83,7 @@ class WeddingUpload extends Model
         return [
             'size_bytes' => 'integer',
             'expected_size_bytes' => 'integer',
+            'reserved_bytes' => 'integer',
             'multipart_part_size_bytes' => 'integer',
             'multipart_max_part_number' => 'integer',
             'hls_checked_at' => 'datetime',
