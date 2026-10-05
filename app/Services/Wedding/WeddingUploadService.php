@@ -193,9 +193,12 @@ class WeddingUploadService
                 continue;
             }
 
+            // Forget a missing or oversized derivative only once its delete
+            // succeeds: the row is the only record of the key, and a failed
+            // delete (e.g. during an R2 outage) must stay discoverable.
             $derivativeSize = $this->storage->getFileSize($disk, $key);
-            if ($derivativeSize === null || $derivativeSize > (int) config('wedding.max_bytes.'.$limitKey)) {
-                $this->storage->deleteFile($disk, $key);
+            if (($derivativeSize === null || $derivativeSize > (int) config('wedding.max_bytes.'.$limitKey))
+                && $this->storage->deleteFile($disk, $key)) {
                 $upload->{$column} = null;
             }
         }

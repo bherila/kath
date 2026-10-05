@@ -79,4 +79,37 @@ class WeddingPruneTest extends WeddingTestCase
         $this->assertNotNull($event);
         $this->assertSame('0 * * * *', $event->expression);
     }
+
+    public function test_a_derivative_whose_cleanup_fails_keeps_its_key(): void
+    {
+        $this->enterAs();
+        $ulid = $this->postJson('/wedding/api/uploads', [
+            'filename' => 'a.jpg',
+            'content_type' => 'image/jpeg',
+            'size' => 10,
+            'file_hash' => $this->hash('a'),
+            'thumbnail_size' => 100,
+        ])->json('ulid');
+        $upload = WeddingUpload::query()->where('ulid', $ulid)->sole();
+        Storage::disk('r2')->put($upload->object_key, str_repeat('x', 10));
+        // The thumbnail PUT never landed, and R2 is refusing deletes.
+        $this->storage()->failDeletes = true;
+
+        $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
+
+        $this->assertSame('derived/'.$ulid.'/thumb.jpg', $upload->refresh()->thumbnail_key);
+
+        // Once deletes work, a missing thumbnail is cleaned up and forgotten.
+        $this->storage()->failDeletes = false;
+        $other = $this->postJson('/wedding/api/uploads', [
+            'filename' => 'b.jpg',
+            'content_type' => 'image/jpeg',
+            'size' => 10,
+            'file_hash' => $this->hash('b'),
+            'thumbnail_size' => 100,
+        ])->json('ulid');
+        Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $other)->sole()->object_key, str_repeat('y', 10));
+        $this->postJson("/wedding/api/uploads/{$other}/complete")->assertOk();
+        $this->assertNull(WeddingUpload::query()->where('ulid', $other)->sole()->thumbnail_key);
+    }
 }
