@@ -159,8 +159,8 @@ export async function uploadFile(
       size: file.size,
       file_hash: fileHash,
       perceptual_hash: derivatives.perceptualHash,
-      has_display: derivatives.display !== null,
-      has_thumbnail: derivatives.thumbnail !== null,
+      display_size: derivatives.display?.size ?? null,
+      thumbnail_size: derivatives.thumbnail?.size ?? null,
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) {

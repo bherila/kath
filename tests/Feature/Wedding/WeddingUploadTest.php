@@ -3,6 +3,7 @@
 namespace Tests\Feature\Wedding;
 
 use App\Models\WeddingUpload;
+use App\Services\FileStorageService;
 use Illuminate\Support\Facades\Storage;
 
 class WeddingUploadTest extends WeddingTestCase
@@ -19,8 +20,8 @@ class WeddingUploadTest extends WeddingTestCase
             'size' => 2048,
             'file_hash' => $this->hash('photo-1'),
             'perceptual_hash' => base64_encode(str_repeat("\x00", 32)),
-            'has_display' => true,
-            'has_thumbnail' => true,
+            'display_size' => 300_000,
+            'thumbnail_size' => 20_000,
         ], $overrides);
     }
 
@@ -41,6 +42,27 @@ class WeddingUploadTest extends WeddingTestCase
             ->assertJsonPath('display_upload.headers.Content-Type', 'image/jpeg');
     }
 
+    public function test_every_presigned_put_is_bound_to_its_declared_size(): void
+    {
+        $this->enterAs();
+
+        $ulid = $this->postJson('/wedding/api/uploads', $this->payload())->assertCreated()->json('ulid');
+
+        /** @var FakeFileStorageService $storage */
+        $storage = app(FileStorageService::class);
+        $upload = WeddingUpload::query()->where('ulid', $ulid)->sole();
+        $this->assertSame([
+            $upload->object_key => 2048,
+            'derived/'.$ulid.'/display.jpg' => 300_000,
+            'derived/'.$ulid.'/thumb.jpg' => 20_000,
+        ], $storage->signedLengths);
+
+        $this->postJson('/wedding/api/uploads', $this->payload([
+            'file_hash' => $this->hash('photo-2'),
+            'thumbnail_size' => config('wedding.max_bytes.thumbnail') + 1,
+        ]))->assertUnprocessable()->assertJsonValidationErrors('thumbnail_size');
+    }
+
     public function test_videos_go_under_the_transcoder_prefix_and_never_get_a_display_copy(): void
     {
         $this->enterAs();
@@ -49,6 +71,7 @@ class WeddingUploadTest extends WeddingTestCase
             'filename' => 'clip.MOV',
             'content_type' => 'video/quicktime',
             'perceptual_hash' => null,
+            'display_size' => 300_000,
         ]))->assertCreated();
 
         $upload = WeddingUpload::query()->sole();

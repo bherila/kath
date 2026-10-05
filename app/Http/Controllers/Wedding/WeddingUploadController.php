@@ -51,8 +51,8 @@ class WeddingUploadController extends Controller
             (int) $request->validated('size'),
             $fileHash,
             $request->validated('perceptual_hash'),
-            (bool) $request->validated('has_display', false),
-            (bool) $request->validated('has_thumbnail', false),
+            $request->validated('display_size') !== null ? (int) $request->validated('display_size') : null,
+            $request->validated('thumbnail_size') !== null ? (int) $request->validated('thumbnail_size') : null,
         );
 
         $upload = $result['upload'];

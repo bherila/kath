@@ -103,8 +103,8 @@ class WeddingUploadService
         int $sizeBytes,
         ?string $fileHash,
         ?string $perceptualHash,
-        bool $wantsDisplay,
-        bool $wantsThumbnail,
+        ?int $displayBytes,
+        ?int $thumbnailBytes,
     ): array {
         // The same guest retrying a file supersedes their own abandoned attempt.
         if ($fileHash !== null) {
@@ -121,6 +121,8 @@ class WeddingUploadService
             ? config('wedding.video_prefix')
             : config('wedding.photo_prefix');
         $derived = config('wedding.derived_prefix').'/'.$ulid;
+        // Only photos get a display copy; videos play via HLS.
+        $displayBytes = $kind === WeddingUpload::KIND_PHOTO ? $displayBytes : null;
 
         $upload = WeddingUpload::query()->create([
             'ulid' => $ulid,
@@ -130,8 +132,8 @@ class WeddingUploadService
             'kind' => $kind,
             'status' => WeddingUpload::STATUS_PENDING,
             'object_key' => $prefix.'/'.$ulid.'.'.$this->extensionFor($filename, $mimeType),
-            'display_key' => $wantsDisplay && $kind === WeddingUpload::KIND_PHOTO ? $derived.'/display.jpg' : null,
-            'thumbnail_key' => $wantsThumbnail ? $derived.'/thumb.jpg' : null,
+            'display_key' => $displayBytes !== null ? $derived.'/display.jpg' : null,
+            'thumbnail_key' => $thumbnailBytes !== null ? $derived.'/thumb.jpg' : null,
             'original_filename' => Str::limit($filename, 250, ''),
             'mime_type' => $mimeType,
             'expected_size_bytes' => $sizeBytes,
@@ -140,17 +142,19 @@ class WeddingUploadService
         ]);
 
         $ttl = (int) config('wedding.upload_url_ttl');
-        $signed = $this->storage->getSignedUploadUrl($this->disk(), $upload->object_key, $mimeType, $ttl);
+        // Each URL is bound to its exact byte length. A multipart upload
+        // signs per part instead, so this single-PUT URL is never used for it.
+        $signed = $this->storage->getSignedUploadUrl($this->disk(), $upload->object_key, $mimeType, $sizeBytes, $ttl);
 
         return [
             'upload' => $upload,
             'upload_url' => $signed['url'],
             'upload_headers' => $signed['headers'],
             'display_upload' => $upload->display_key !== null
-                ? $this->storage->getSignedUploadUrl($this->disk(), $upload->display_key, self::DERIVATIVE_MIME, $ttl)
+                ? $this->storage->getSignedUploadUrl($this->disk(), $upload->display_key, self::DERIVATIVE_MIME, (int) $displayBytes, $ttl)
                 : null,
             'thumbnail_upload' => $upload->thumbnail_key !== null
-                ? $this->storage->getSignedUploadUrl($this->disk(), $upload->thumbnail_key, self::DERIVATIVE_MIME, $ttl)
+                ? $this->storage->getSignedUploadUrl($this->disk(), $upload->thumbnail_key, self::DERIVATIVE_MIME, (int) $thumbnailBytes, $ttl)
                 : null,
         ];
     }

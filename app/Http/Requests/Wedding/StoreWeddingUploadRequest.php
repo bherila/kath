@@ -31,8 +31,10 @@ class StoreWeddingUploadRequest extends FormRequest
             'file_hash' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
             // Base64 of the 32-byte blockhash.
             'perceptual_hash' => ['nullable', 'string', 'regex:/^[A-Za-z0-9+\/]{43}=$/'],
-            'has_display' => ['sometimes', 'boolean'],
-            'has_thumbnail' => ['sometimes', 'boolean'],
+            // Exact byte sizes of the client-made JPEG derivatives; each is
+            // signed into its presigned PUT, so storage rejects any other size.
+            'display_size' => ['nullable', 'integer', 'min:1', 'max:'.(int) config('wedding.max_bytes.display')],
+            'thumbnail_size' => ['nullable', 'integer', 'min:1', 'max:'.(int) config('wedding.max_bytes.thumbnail')],
         ];
     }
 

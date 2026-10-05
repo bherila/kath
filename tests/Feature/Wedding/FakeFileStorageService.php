@@ -11,8 +11,13 @@ use Illuminate\Support\Facades\Storage;
  */
 class FakeFileStorageService extends FileStorageService
 {
-    public function getSignedUploadUrl(string $disk, string $key, string $contentType, int $ttlMinutes = 30): array
+    /** @var array<string, int> Signed length per key, for assertions. */
+    public array $signedLengths = [];
+
+    public function getSignedUploadUrl(string $disk, string $key, string $contentType, int $contentLength, int $ttlMinutes = 30): array
     {
+        $this->signedLengths[$key] = $contentLength;
+
         return ['url' => "https://r2.example.test/{$disk}/{$key}?put", 'headers' => ['Content-Type' => $contentType]];
     }
 
