@@ -13,6 +13,7 @@ export default defineConfig({
                 'resources/js/blog.tsx',
                 'resources/js/contact.tsx',
                 'resources/js/navbar.tsx',
+                'resources/js/wedding.tsx',
             ],
       refresh: true,
     }),

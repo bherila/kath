@@ -10,9 +10,9 @@ Make the smallest coherent change that solves the problem. Include adjacent low-
 
 - **Stack**: Laravel 13 on PHP 8.3–8.5, React 19 + TypeScript, Vite, Tailwind CSS v4.
 - **Package manager**: pnpm — never use npm or npx directly.
-- **Database**: no domain tables exist yet (`database/migrations/` is empty). Tests use SQLite in-memory regardless.
+- **Database**: one domain table, `wedding_uploads` (guest photo/video contributions for `/wedding`). Tests use SQLite in-memory regardless.
 - **Dependency management**: Composer (PHP) + pnpm (JS). Do not mix.
-- **No auth, no "apps"**: this site has no login/authentication and no finance/PHR/client-management/admin features. See README.md "Where this is going" for the two features (markdown blog, Pages/Widgets CMS) this is deliberately structured not to fight — but neither is built yet.
+- **No auth, no "apps"**: this site has no login/authentication (the `/wedding` hub's email prompt is a session label, not auth — upload ownership rests on a per-session token) and no finance/PHR/client-management/admin features. See README.md "Where this is going" for the two features (markdown blog, Pages/Widgets CMS) this is deliberately structured not to fight — but neither is built yet.
 
 ## Commands
 
