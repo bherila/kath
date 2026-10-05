@@ -106,9 +106,18 @@ async function buildDerivatives(file: File, kind: FileKind): Promise<Derivatives
   }
 }
 
-/** localStorage key for resuming a large video's multipart upload. */
-function multipartSessionKey(file: File, fileHash: string | null): string {
-  return `wedding-multipart:${fileHash ?? `${file.name}:${file.size}:${file.lastModified}`}`;
+/**
+ * localStorage key for a large video's multipart session. Only a content hash
+ * may identify a resumable session: name/size/mtime can match a different
+ * video, and resuming it would splice two files into one object. Unhashed
+ * files (over the in-browser hash cap) get a one-off key that is never
+ * looked up again, so they always start a fresh session.
+ */
+function multipartSessionKey(fileHash: string | null): { key: string; resumable: boolean } {
+  if (fileHash !== null) {
+    return { key: `wedding-multipart:${fileHash}`, resumable: true };
+  }
+  return { key: `wedding-multipart:unverified:${crypto.randomUUID()}`, resumable: false };
 }
 
 async function putDerivative(target: { url: string; headers: Record<string, string> } | null, blob: Blob | null, signal: AbortSignal): Promise<void> {
@@ -132,8 +141,8 @@ export async function uploadFile(
   signal: AbortSignal,
 ): Promise<UploadOutcome> {
   const contentType = contentTypeFor(file);
-  const sessionKey = multipartSessionKey(file, fileHash);
-  const resumable = kind === 'video' ? readMultipartSession(sessionKey) : null;
+  const { key: sessionKey, resumable: canResume } = multipartSessionKey(fileHash);
+  const resumable = kind === 'video' && canResume ? readMultipartSession(sessionKey) : null;
 
   if (resumable !== null) {
     try {
