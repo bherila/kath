@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import * as uploader from '@/wedding/uploader';
 import { UploadPanel } from '@/wedding/UploadPanel';
@@ -133,5 +133,37 @@ describe('UploadPanel', () => {
 
     await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1));
     expect(peak).toBe(2);
+  });
+  it('queues a retried file once however often Retry is pressed', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.computeFileHash.mockImplementation(async (file: File) => `hash-${file.name}`);
+    const releases: Array<() => void> = [];
+    mocked.uploadFile.mockRejectedValueOnce(new Error('Upload failed: network error.')).mockImplementation(
+      () => new Promise((resolve) => releases.push(() => resolve('uploaded'))),
+    );
+    const onUploaded = jest.fn();
+
+    render(<UploadPanel limits={limits} onUploaded={onUploaded} />);
+    choose([photo('a.jpg')]);
+    const retryButton = await screen.findByRole('button', { name: /Retry/ });
+
+    // Occupy both upload slots, then press Retry twice before React re-renders.
+    choose([photo('b.jpg'), photo('c.jpg')]);
+    await waitFor(() => expect(releases).toHaveLength(2));
+    act(() => {
+      retryButton.click();
+      retryButton.click();
+    });
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
+
+    // Finish uploads as they start (b, c, then the retried a) until the pool drains.
+    while (onUploaded.mock.calls.length === 0) {
+      await waitFor(() => expect(releases.length + onUploaded.mock.calls.length).toBeGreaterThan(0));
+      act(() => releases.shift()?.());
+    }
+    expect(onUploaded).toHaveBeenCalledTimes(1);
+
+    const attemptsForA = mocked.uploadFile.mock.calls.filter(([file]) => file.name === 'a.jpg');
+    expect(attemptsForA).toHaveLength(2);
   });
 });

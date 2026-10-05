@@ -70,18 +70,28 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   const queueRef = useRef<QueueItem[]>([]);
   const workersRef = useRef(0);
   const uploadedRef = useRef(0);
+  // Items queued or uploading, so a repeated Retry can't enqueue one twice.
+  const pendingRef = useRef(new Set<number>());
 
   const runUploads = useCallback((queue: QueueItem[]): void => {
     const controller = abortRef.current ?? new AbortController();
     abortRef.current = controller;
-    queueRef.current.push(...queue);
+    for (const item of queue) {
+      if (pendingRef.current.has(item.id)) {
+        continue;
+      }
+      pendingRef.current.add(item.id);
+      patch(item.id, { status: 'queued', error: null });
+      queueRef.current.push(item);
+    }
 
     const worker = async (): Promise<void> => {
       for (let item = queueRef.current.shift(); item !== undefined; item = queueRef.current.shift()) {
+        const { id } = item;
         if (item.kind === null) {
+          pendingRef.current.delete(id);
           continue;
         }
-        const { id } = item;
         patch(id, { status: 'uploading', progress: 0, error: null });
         try {
           const outcome = await uploadFile(
@@ -97,6 +107,8 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
           }
         } catch (err) {
           patch(id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed.' });
+        } finally {
+          pendingRef.current.delete(id);
         }
       }
       workersRef.current -= 1;
