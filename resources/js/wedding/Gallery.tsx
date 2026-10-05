@@ -1,5 +1,5 @@
 import { Download, ImageIcon, Play, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -19,18 +19,34 @@ export function Gallery({ refreshKey }: GalleryProps) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<GalleryItem | null>(null);
 
+  // Each refresh starts a new generation; responses from an older one (a
+  // superseded refresh, or a load-more that a refresh overtook) are dropped
+  // so they can't overwrite or duplicate the newer page.
+  const generation = useRef(0);
+
   const load = useCallback(async (cursor: string | null) => {
+    if (cursor === null) {
+      generation.current += 1;
+    }
+    const requestGeneration = generation.current;
     setLoading(true);
     setError(null);
     try {
       const url = cursor === null ? '/wedding/api/gallery' : `/wedding/api/gallery?cursor=${encodeURIComponent(cursor)}`;
       const page = await requestJson<GalleryPage>('GET', url);
+      if (requestGeneration !== generation.current) {
+        return;
+      }
       setItems((current) => (cursor === null ? page.items : [...current, ...page.items]));
       setNextCursor(page.next_cursor);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load the gallery.');
+      if (requestGeneration === generation.current) {
+        setError(err instanceof Error ? err.message : 'Could not load the gallery.');
+      }
     } finally {
-      setLoading(false);
+      if (requestGeneration === generation.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
