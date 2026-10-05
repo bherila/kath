@@ -38,6 +38,14 @@ class FakeFileStorageService extends FileStorageService
         return true;
     }
 
+    /** When true, object deletes fail the way a disk with `throw => false` reports it. */
+    public bool $failDeletes = false;
+
+    public function deleteFile(string $disk, string $key): bool
+    {
+        return $this->failDeletes ? false : parent::deleteFile($disk, $key);
+    }
+
     public function abortMultipartUpload(string $disk, string $key, string $uploadId): bool
     {
         return true;

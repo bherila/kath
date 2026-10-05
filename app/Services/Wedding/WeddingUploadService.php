@@ -363,20 +363,65 @@ class WeddingUploadService
     }
 
     /**
-     * Delete a never-completed upload's row and any objects it may have
-     * written.
+     * Delete a never-completed upload's objects, then its row. The row holds
+     * the only record of the keys, so if any delete fails it is kept as a
+     * `deleting` tombstone for prunePending() to retry.
      */
-    private function discard(WeddingUpload $upload): void
+    public function discard(WeddingUpload $upload): bool
     {
         $this->abortQuietly($upload);
 
+        $deleted = true;
         foreach ([$upload->object_key, $upload->display_key, $upload->thumbnail_key] as $key) {
-            if ($key !== null) {
-                $this->storage->deleteFile($this->disk(), $key);
+            if ($key === null) {
+                continue;
+            }
+
+            try {
+                $deleted = $this->storage->deleteFile($this->disk(), $key) && $deleted;
+            } catch (\Throwable $e) {
+                report($e);
+                $deleted = false;
             }
         }
 
+        if (! $deleted) {
+            $upload->status = WeddingUpload::STATUS_DELETING;
+            $upload->save();
+
+            return false;
+        }
+
         $upload->delete();
+
+        return true;
+    }
+
+    /**
+     * Reap uploads that will never complete: pending rows past the hold
+     * window (the browser closed or gave up) and tombstones whose object
+     * deletes failed earlier.
+     *
+     * @return array{discarded: int, retained: int}
+     */
+    public function prunePending(): array
+    {
+        $result = ['discarded' => 0, 'retained' => 0];
+
+        WeddingUpload::query()
+            ->where(function ($query): void {
+                $query->where('status', WeddingUpload::STATUS_DELETING)
+                    ->orWhere(function ($query): void {
+                        $query->where('status', WeddingUpload::STATUS_PENDING)
+                            ->where('created_at', '<', now()->subHours((int) config('wedding.pending_hold_hours')));
+                    });
+            })
+            ->lazyById()
+            ->each(function (WeddingUpload $upload) use (&$result): void {
+                $this->discard($upload) ? $result['discarded']++ : $result['retained']++;
+            });
+
+        return $result;
     }
 
     private function abortQuietly(WeddingUpload $upload): void

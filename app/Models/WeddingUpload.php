@@ -46,6 +46,9 @@ class WeddingUpload extends Model
 
     public const STATUS_HIDDEN = 'hidden';
 
+    /** Discarded, but an object delete failed; the prune command retries. */
+    public const STATUS_DELETING = 'deleting';
+
     protected $fillable = [
         'ulid',
         'guest_email',
