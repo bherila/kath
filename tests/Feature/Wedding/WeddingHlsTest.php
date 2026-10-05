@@ -103,4 +103,41 @@ class WeddingHlsTest extends WeddingTestCase
 
         $this->assertSame(0, WeddingUpload::query()->whereNotNull('hls_checked_at')->count());
     }
+
+    public function test_a_second_copy_of_a_large_unhashed_video_is_hidden_once_transcoded(): void
+    {
+        // Over the browser's hash cap: neither upload carried a file hash.
+        $first = $this->makeUpload(['kind' => WeddingUpload::KIND_VIDEO, 'object_key' => 'videos/a.mov', 'file_hash' => null]);
+        $second = $this->makeUpload(['kind' => WeddingUpload::KIND_VIDEO, 'object_key' => 'videos/b.mov', 'file_hash' => null]);
+        // The transcoder maps both sources to the same content.
+        $this->publishHls('videos/a.mov');
+        $this->publishHls('videos/b.mov');
+
+        $this->artisan('wedding:resolve-videos')->expectsOutputToContain('Resolved 2')->assertSuccessful();
+
+        $this->assertSame(WeddingUpload::STATUS_READY, $first->refresh()->status);
+        $this->assertSame(WeddingUpload::STATUS_HIDDEN, $second->refresh()->status);
+        $this->assertSame($first->id, $second->duplicate_of_id);
+        $this->enterAs();
+        $this->getJson('/wedding/api/gallery')
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.ulid', $first->ulid);
+    }
+
+    public function test_duplicate_videos_keep_the_earliest_whichever_resolves_first(): void
+    {
+        $first = $this->makeUpload(['kind' => WeddingUpload::KIND_VIDEO, 'object_key' => 'videos/a.mov', 'file_hash' => null]);
+        $second = $this->makeUpload(['kind' => WeddingUpload::KIND_VIDEO, 'object_key' => 'videos/b.mov', 'file_hash' => null]);
+        $this->publishHls('videos/b.mov');
+        $this->enterAs();
+
+        // The later copy is played (and resolved) before the earlier one is transcoded.
+        $this->get("/wedding/hls/{$second->ulid}/master.m3u8")->assertOk();
+        $this->publishHls('videos/a.mov');
+        $this->get("/wedding/hls/{$first->ulid}/master.m3u8")->assertOk();
+
+        $this->assertSame(WeddingUpload::STATUS_READY, $first->refresh()->status);
+        $this->assertSame(WeddingUpload::STATUS_HIDDEN, $second->refresh()->status);
+        $this->assertSame($first->id, $second->duplicate_of_id);
+    }
 }

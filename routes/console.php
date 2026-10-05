@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Wedding\HlsService;
 use App\Services\Wedding\WeddingUploadService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -15,3 +16,9 @@ Artisan::command('wedding:prune-uploads', function (WeddingUploadService $upload
 })->purpose('Delete wedding uploads that were never completed, and retry failed object deletes');
 
 Schedule::command('wedding:prune-uploads')->hourly()->withoutOverlapping();
+
+Artisan::command('wedding:resolve-videos', function (HlsService $hls) {
+    $this->info('Resolved '.$hls->resolvePendingVideos().' newly transcoded video(s).');
+})->purpose('Pick up finished HLS transcodes for guest videos and hide duplicate videos');
+
+Schedule::command('wedding:resolve-videos')->everyFiveMinutes()->withoutOverlapping();

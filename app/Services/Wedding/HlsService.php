@@ -61,9 +61,59 @@ class HlsService
 
         $upload->hls_checked_at = now();
         $upload->hls_content_id = $contentId;
+
         $upload->saveQuietly();
 
+        if ($contentId !== null) {
+            $this->hideLaterCopies($contentId);
+        }
+
         return $contentId;
+    }
+
+    /**
+     * The transcoder's content id hashes the source, so it catches the large
+     * videos the browser didn't hash. Keep the earliest ready upload of this
+     * content and hide the rest (objects kept, as for any hidden upload) —
+     * whichever order the copies happened to resolve in.
+     */
+    private function hideLaterCopies(string $contentId): void
+    {
+        $copies = WeddingUpload::query()
+            ->where('kind', WeddingUpload::KIND_VIDEO)
+            ->where('status', WeddingUpload::STATUS_READY)
+            ->where('hls_content_id', $contentId)
+            ->orderBy('id')
+            ->get();
+
+        $original = $copies->shift();
+        foreach ($copies as $copy) {
+            $copy->duplicate_of_id = $original?->id;
+            $copy->status = WeddingUpload::STATUS_HIDDEN;
+            $copy->saveQuietly();
+        }
+    }
+
+    /**
+     * Resolve every ready video still awaiting its transcode, so status and
+     * duplicate detection don't wait for someone to press play.
+     */
+    public function resolvePendingVideos(): int
+    {
+        $resolved = 0;
+
+        WeddingUpload::query()
+            ->ready()
+            ->where('kind', WeddingUpload::KIND_VIDEO)
+            ->whereNull('hls_content_id')
+            ->lazyById()
+            ->each(function (WeddingUpload $upload) use (&$resolved): void {
+                if ($this->resolveUpload($upload) !== null) {
+                    $resolved++;
+                }
+            });
+
+        return $resolved;
     }
 
     /**
