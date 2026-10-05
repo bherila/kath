@@ -50,7 +50,10 @@ function WeddingHub({ data }: WeddingHubProps) {
           {data.ceremony.master_url !== null && !ceremonyFailed ? (
             <HlsVideoPlayer
               src={data.ceremony.master_url}
-              className="aspect-video w-full rounded-md bg-black"
+              // Size to the video itself: the ceremony (and guests' phone videos)
+              // may be portrait, which a fixed 16:9 box would letterbox. Cap the
+              // height so a portrait video stays on one screen.
+              className="mx-auto max-h-[80vh] w-full rounded-md bg-black object-contain"
               onError={() => setCeremonyFailed(true)}
             />
           ) : (
