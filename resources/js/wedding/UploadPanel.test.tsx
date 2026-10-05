@@ -114,4 +114,24 @@ describe('UploadPanel', () => {
     expect(peak).toBe(2);
     expect(mocked.uploadFile).toHaveBeenCalledTimes(5);
   });
+  it('uploads a two-file selection in parallel', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.computeFileHash.mockImplementation(async (file: File) => `hash-${file.name}`);
+    let inFlight = 0;
+    let peak = 0;
+    mocked.uploadFile.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight -= 1;
+      return 'uploaded';
+    });
+    const onUploaded = jest.fn();
+
+    render(<UploadPanel limits={limits} onUploaded={onUploaded} />);
+    choose([photo('a.jpg'), photo('b.jpg')]);
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1));
+    expect(peak).toBe(2);
+  });
 });

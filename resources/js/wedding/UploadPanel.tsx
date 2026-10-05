@@ -106,7 +106,10 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
       }
     };
 
-    while (workersRef.current < CONCURRENCY && workersRef.current < queueRef.current.length) {
+    // Count the free slots first: a worker shifts its first item
+    // synchronously, so the queue shrinks as each one starts.
+    const toStart = Math.min(CONCURRENCY - workersRef.current, queueRef.current.length);
+    for (let i = 0; i < toStart; i += 1) {
       workersRef.current += 1;
       void worker();
     }
