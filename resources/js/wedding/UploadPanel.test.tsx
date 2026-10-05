@@ -81,4 +81,37 @@ describe('UploadPanel', () => {
     // The retry reuses the hash computed for the first attempt.
     expect(mocked.uploadFile.mock.calls[1]?.[2]).toBe('hash-a.jpg');
   });
+  it('keeps one upload pool across selections made while uploading', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.computeFileHash.mockImplementation(async (file: File) => `hash-${file.name}`);
+    let inFlight = 0;
+    let peak = 0;
+    const releases: Array<() => void> = [];
+    mocked.uploadFile.mockImplementation(() => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise((resolve) => {
+        releases.push(() => {
+          inFlight -= 1;
+          resolve('uploaded');
+        });
+      });
+    });
+    const onUploaded = jest.fn();
+
+    render(<UploadPanel limits={limits} onUploaded={onUploaded} />);
+    choose([photo('a.jpg'), photo('b.jpg'), photo('c.jpg')]);
+    await waitFor(() => expect(inFlight).toBe(2));
+    choose([photo('d.jpg'), photo('e.jpg')]);
+    await waitFor(() => expect(screen.getAllByText('Waiting…').length).toBeGreaterThanOrEqual(3));
+
+    while (mocked.uploadFile.mock.calls.length < 5 || inFlight > 0) {
+      await waitFor(() => expect(releases.length).toBeGreaterThan(0));
+      releases.shift()?.();
+    }
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1));
+    expect(peak).toBe(2);
+    expect(mocked.uploadFile).toHaveBeenCalledTimes(5);
+  });
 });

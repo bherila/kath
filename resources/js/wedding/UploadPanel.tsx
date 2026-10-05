@@ -64,41 +64,51 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...changes } : item)));
   }, []);
 
-  const runUploads = useCallback(async (queue: QueueItem[]) => {
+  // One queue and one worker pool for the whole panel, so picking more files
+  // (or retrying) while a batch is still uploading joins that batch instead of
+  // starting a second set of workers.
+  const queueRef = useRef<QueueItem[]>([]);
+  const workersRef = useRef(0);
+  const uploadedRef = useRef(0);
+
+  const runUploads = useCallback((queue: QueueItem[]): void => {
     const controller = abortRef.current ?? new AbortController();
     abortRef.current = controller;
-    let uploaded = 0;
-    let cursor = 0;
+    queueRef.current.push(...queue);
 
     const worker = async (): Promise<void> => {
-      while (cursor < queue.length) {
-        const item = queue[cursor];
-        cursor += 1;
-        if (item === undefined || item.kind === null) {
+      for (let item = queueRef.current.shift(); item !== undefined; item = queueRef.current.shift()) {
+        if (item.kind === null) {
           continue;
         }
-        patch(item.id, { status: 'uploading', progress: 0, error: null });
+        const { id } = item;
+        patch(id, { status: 'uploading', progress: 0, error: null });
         try {
           const outcome = await uploadFile(
             item.file,
             item.kind,
             item.hash,
-            (fraction) => patch(item.id, { progress: fraction }),
+            (fraction) => patch(id, { progress: fraction }),
             controller.signal,
           );
-          patch(item.id, { status: outcome === 'duplicate' ? 'duplicate' : 'done', progress: 1 });
+          patch(id, { status: outcome === 'duplicate' ? 'duplicate' : 'done', progress: 1 });
           if (outcome === 'uploaded') {
-            uploaded += 1;
+            uploadedRef.current += 1;
           }
         } catch (err) {
-          patch(item.id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed.' });
+          patch(id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed.' });
         }
+      }
+      workersRef.current -= 1;
+      if (workersRef.current === 0 && uploadedRef.current > 0) {
+        uploadedRef.current = 0;
+        onUploaded();
       }
     };
 
-    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-    if (uploaded > 0) {
-      onUploaded();
+    while (workersRef.current < CONCURRENCY && workersRef.current < queueRef.current.length) {
+      workersRef.current += 1;
+      void worker();
     }
   }, [onUploaded, patch]);
 
@@ -144,11 +154,11 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
       queue.push(item);
     }
 
-    await runUploads(queue);
+    runUploads(queue);
   }, [limits, patch, runUploads]);
 
   const retry = (item: QueueItem): void => {
-    void runUploads([item]);
+    runUploads([item]);
   };
 
   const onInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
