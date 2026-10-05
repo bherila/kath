@@ -66,4 +66,30 @@ class WeddingGateTest extends WeddingTestCase
         $this->assertStringContainsString("worker-src 'self' blob:", $csp);
         $this->assertStringNotContainsString('*.r2.cloudflarestorage.com', $csp);
     }
+
+    public function test_upload_traffic_does_not_exhaust_the_entry_limit_for_a_shared_ip(): void
+    {
+        // A guest on venue Wi-Fi signs many multipart parts...
+        $this->enterAs('busy@example.test');
+        foreach (range(1, 40) as $_) {
+            $this->postJson('/wedding/api/uploads/check', ['hashes' => []])->assertOk();
+        }
+
+        // ...and the next guest from the same IP can still get in.
+        $this->flushSession();
+        $this->post('/wedding/enter', ['email' => 'next@example.test'])->assertRedirect('/wedding');
+    }
+
+    public function test_upload_limits_are_per_guest_not_per_ip(): void
+    {
+        config(['cache.default' => 'array']);
+        $this->enterAs('first@example.test');
+        foreach (range(1, 600) as $_) {
+            $this->postJson('/wedding/api/uploads/check', ['hashes' => []]);
+        }
+        $this->postJson('/wedding/api/uploads/check', ['hashes' => []])->assertStatus(429);
+
+        $this->switchGuest('second@example.test');
+        $this->postJson('/wedding/api/uploads/check', ['hashes' => []])->assertOk();
+    }
 }

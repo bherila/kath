@@ -27,7 +27,7 @@ Route::get('/contact', function () {
 Route::prefix('wedding')->name('wedding.')->group(function () {
     Route::get('/', [WeddingController::class, 'show'])->name('show');
     Route::post('/enter', [WeddingController::class, 'enter'])
-        ->middleware('throttle:20,1')
+        ->middleware('throttle:wedding-enter')
         ->name('enter');
     Route::post('/leave', [WeddingController::class, 'leave'])->name('leave');
 
@@ -40,7 +40,7 @@ Route::prefix('wedding')->name('wedding.')->group(function () {
         Route::prefix('api')->group(function () {
             Route::get('/gallery', [WeddingGalleryController::class, 'index'])->name('gallery');
 
-            Route::middleware('throttle:240,1')->group(function () {
+            Route::middleware('throttle:wedding-uploads')->group(function () {
                 Route::post('/uploads/check', [WeddingUploadController::class, 'check'])->name('uploads.check');
                 Route::post('/uploads', [WeddingUploadController::class, 'store'])->name('uploads.store');
                 Route::post('/uploads/{upload}/complete', [WeddingUploadController::class, 'complete'])->name('uploads.complete');
