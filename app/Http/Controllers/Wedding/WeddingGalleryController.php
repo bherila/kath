@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Wedding;
 use App\Http\Controllers\Controller;
 use App\Models\WeddingUpload;
 use App\Services\FileStorageService;
-use App\Services\Wedding\HlsService;
 use App\Support\WeddingGuest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -19,10 +18,7 @@ class WeddingGalleryController extends Controller
 {
     private const VARIANTS = ['thumb', 'display', 'original'];
 
-    public function __construct(
-        private readonly FileStorageService $storage,
-        private readonly HlsService $hls,
-    ) {}
+    public function __construct(private readonly FileStorageService $storage) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -35,9 +31,9 @@ class WeddingGalleryController extends Controller
             ->orderByDesc('id')
             ->cursorPaginate((int) config('wedding.gallery_page_size'));
 
+        // No storage I/O per item: a video's transcode status comes from the
+        // cached content id, and the playback proxy resolves it on demand.
         $items = collect($page->items())->map(function (WeddingUpload $upload) use ($tokenHash): array {
-            $hlsReady = $upload->isVideo() && $this->hls->resolveUpload($upload) !== null;
-
             return [
                 'ulid' => $upload->ulid,
                 'kind' => $upload->kind,
@@ -47,9 +43,10 @@ class WeddingGalleryController extends Controller
                 'thumb_url' => $upload->thumbnail_key !== null ? $this->variantUrl($upload, 'thumb') : null,
                 'display_url' => $upload->kind === WeddingUpload::KIND_PHOTO ? $this->variantUrl($upload, 'display') : null,
                 'original_url' => $this->variantUrl($upload, 'original'),
-                'master_url' => $hlsReady
+                'master_url' => $upload->isVideo()
                     ? route('wedding.hls', ['source' => $upload->ulid, 'path' => 'master.m3u8'], false)
                     : null,
+                'processing' => $upload->isVideo() && ! $upload->isHlsReady(),
             ];
         });
 

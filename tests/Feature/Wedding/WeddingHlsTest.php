@@ -73,18 +73,34 @@ class WeddingHlsTest extends WeddingTestCase
         $photo = $this->makeUpload();
         $this->enterAs();
 
-        $this->getJson('/wedding/api/gallery')->assertJsonPath('items.1.master_url', null);
+        $master = "/wedding/hls/{$video->ulid}/master.m3u8";
+        $this->getJson('/wedding/api/gallery')
+            ->assertJsonPath('items.1.master_url', $master)
+            ->assertJsonPath('items.1.processing', true)
+            ->assertJsonPath('items.0.master_url', null);
+        $this->get($master)->assertNotFound();
         $this->get("/wedding/hls/{$photo->ulid}/master.m3u8")->assertNotFound();
 
         $this->publishHls('videos/clip.mov');
         // Not-found results are rechecked at most every two minutes.
         $this->travel(3)->minutes();
 
-        $this->getJson('/wedding/api/gallery')
-            ->assertJsonPath('items.1.master_url', "/wedding/hls/{$video->ulid}/master.m3u8");
-        $this->get("/wedding/hls/{$video->ulid}/master.m3u8")
+        $this->get($master)
             ->assertOk()
             ->assertSee("/wedding/hls/{$video->ulid}/720/index.m3u8", false);
         $this->assertSame(self::CONTENT_ID, $video->refresh()->hls_content_id);
+        $this->getJson('/wedding/api/gallery')->assertJsonPath('items.1.processing', false);
+    }
+
+    public function test_listing_the_gallery_does_no_storage_lookups(): void
+    {
+        foreach (range(1, 5) as $i) {
+            $this->makeUpload(['kind' => WeddingUpload::KIND_VIDEO, 'object_key' => "videos/v{$i}.mp4"]);
+        }
+        $this->enterAs();
+
+        $this->getJson('/wedding/api/gallery')->assertOk()->assertJsonCount(5, 'items');
+
+        $this->assertSame(0, WeddingUpload::query()->whereNotNull('hls_checked_at')->count());
     }
 }

@@ -82,7 +82,10 @@ export interface GalleryItem {
   thumb_url: string | null;
   display_url: string | null;
   original_url: string;
+  /** Videos: the playback proxy URL (it 404s until transcoding finishes). */
   master_url: string | null;
+  /** Videos not yet known to be transcoded, as of the last check. */
+  processing: boolean;
 }
 
 export interface GalleryPage {
