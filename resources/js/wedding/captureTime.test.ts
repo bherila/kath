@@ -6,10 +6,14 @@ const u32 = (n: number): number[] => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >
 
 /** A minimal JPEG whose EXIF holds DateTimeOriginal (+ offset, if given). */
 function jpegWithExif(dateTime: string, offset: string | null): File {
-  const entries: Array<{ tag: number; value: string }> = [{ tag: 0x9003, value: `${dateTime}\0` }];
-  if (offset !== null) {
-    entries.push({ tag: 0x9011, value: `${offset}\0` });
-  }
+  return jpegWithTags(offset === null ? { 0x9003: dateTime } : { 0x9003: dateTime, 0x9011: offset });
+}
+
+/** A minimal JPEG whose Exif IFD holds these ASCII tags. */
+function jpegWithTags(tags: Record<number, string>): File {
+  const entries = Object.entries(tags)
+    .map(([tag, value]) => ({ tag: Number(tag), value: `${value}\0` }))
+    .sort((a, b) => a.tag - b.tag);
   // TIFF (big-endian): header, IFD0 with one entry (Exif IFD pointer), Exif IFD, values.
   const ifd0At = 8;
   const exifIfdAt = ifd0At + 2 + 12 + 4;
@@ -81,5 +85,15 @@ describe('capture time', () => {
 
   it('ignores a malformed offset rather than misreading the time', () => {
     expect(parseExifDate('2026:09:27 17:04:12', 'local')).toEqual(new Date(2026, 8, 27, 17, 4, 12));
+  });
+
+  it('pairs each EXIF date only with its own offset tag', async () => {
+    // OffsetTime (0x9010) is the modification date's offset, e.g. an edit
+    // made in another time zone; it must not shift the capture time.
+    const edited = jpegWithTags({ 0x9003: '2026:09:27 17:04:12', 0x9010: '+09:00' });
+    await expect(readCaptureTime(edited, 'photo')).resolves.toBe(new Date(2026, 8, 27, 17, 4, 12).toISOString());
+
+    const digitized = jpegWithTags({ 0x9004: '2026:09:27 17:04:12', 0x9010: '+09:00', 0x9012: '-07:00' });
+    await expect(readCaptureTime(digitized, 'photo')).resolves.toBe('2026-09-28T00:04:12.000Z');
   });
 });

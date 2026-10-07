@@ -45,8 +45,8 @@ function isPlausible(date: Date): boolean {
 const EXIF_TAGS = {
   DateTimeOriginal: 0x9003,
   CreateDate: 0x9004,
-  OffsetTime: 0x9010,
   OffsetTimeOriginal: 0x9011,
+  OffsetTimeDigitized: 0x9012,
 } as const;
 
 async function readPhotoCaptureTime(file: File): Promise<Date | null> {
@@ -66,10 +66,14 @@ async function readPhotoCaptureTime(file: File): Promise<Date | null> {
   }
 
   const text = (tag: number): string | null => (typeof tags[tag] === 'string' ? tags[tag] : null);
+  // Each date has its own offset tag (EXIF 2.31); OffsetTime belongs to the
+  // modification date, which may be from an edit made in another time zone.
   const original = text(EXIF_TAGS.DateTimeOriginal);
-  const raw = original ?? text(EXIF_TAGS.CreateDate);
-  const offset = original !== null ? text(EXIF_TAGS.OffsetTimeOriginal) ?? text(EXIF_TAGS.OffsetTime) : text(EXIF_TAGS.OffsetTime);
-  return raw === null ? null : parseExifDate(raw, offset);
+  if (original !== null) {
+    return parseExifDate(original, text(EXIF_TAGS.OffsetTimeOriginal));
+  }
+  const digitized = text(EXIF_TAGS.CreateDate);
+  return digitized === null ? null : parseExifDate(digitized, text(EXIF_TAGS.OffsetTimeDigitized));
 }
 
 /**
