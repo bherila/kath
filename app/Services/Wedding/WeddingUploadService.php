@@ -4,7 +4,6 @@ namespace App\Services\Wedding;
 
 use App\Models\WeddingUpload;
 use App\Services\FileStorageService;
-use App\Support\PerceptualHash;
 use App\Support\WeddingGuest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -16,7 +15,8 @@ use Illuminate\Support\Str;
  *
  * Duplicate avoidance is shared-gallery wide: a SHA-256 computed in the
  * browser blocks a byte-identical file already shared by anyone, and a
- * perceptual hash flags (never blocks) near-identical photos.
+ * perceptual hash groups near-identical photos so the gallery shows only the
+ * best copy of each (PhotoClusterService).
  */
 class WeddingUploadService
 {
@@ -37,7 +37,10 @@ class WeddingUploadService
 
     private const DERIVATIVE_MIME = 'image/jpeg';
 
-    public function __construct(private readonly FileStorageService $storage) {}
+    public function __construct(
+        private readonly FileStorageService $storage,
+        private readonly PhotoClusterService $clusters,
+    ) {}
 
     private function disk(): string
     {
@@ -87,6 +90,8 @@ class WeddingUploadService
     }
 
     /**
+     * @param  list<string>|null  $perceptualHashes  photos: blockhash per orientation
+     * @param  array{width: int, height: int}|null  $dimensions  photos: decoded size
      * @return array{
      *     upload: WeddingUpload,
      *     upload_url: string,
@@ -102,7 +107,8 @@ class WeddingUploadService
         string $mimeType,
         int $sizeBytes,
         ?string $fileHash,
-        ?string $perceptualHash,
+        ?array $perceptualHashes,
+        ?array $dimensions,
         ?int $displayBytes,
         ?int $thumbnailBytes,
         string $clientIp,
@@ -142,7 +148,9 @@ class WeddingUploadService
             'mime_type' => $mimeType,
             'expected_size_bytes' => $sizeBytes,
             'file_hash' => $fileHash,
-            'perceptual_hash' => $kind === WeddingUpload::KIND_PHOTO ? $perceptualHash : null,
+            'perceptual_hashes' => $kind === WeddingUpload::KIND_PHOTO ? $perceptualHashes : null,
+            'width' => $kind === WeddingUpload::KIND_PHOTO ? ($dimensions['width'] ?? null) : null,
+            'height' => $kind === WeddingUpload::KIND_PHOTO ? ($dimensions['height'] ?? null) : null,
         ];
 
         // Check and reserve under one lock so concurrent presigns can't both
@@ -207,6 +215,10 @@ class WeddingUploadService
     public function completeUpload(WeddingUpload $upload): bool
     {
         if ($upload->isReady()) {
+            // A retried completion re-runs cluster placement (idempotent), in
+            // case the first request died between marking ready and placing.
+            $this->clusters->place($upload);
+
             return true;
         }
 
@@ -252,7 +264,6 @@ class WeddingUploadService
             $upload->multipart_upload_id = null;
             $upload->multipart_part_size_bytes = null;
             $upload->multipart_max_part_number = null;
-            $upload->duplicate_of_id = $this->findPerceptualDuplicateId($upload);
             $upload->save();
 
             return true;
@@ -264,9 +275,13 @@ class WeddingUploadService
 
         if (! $promoted) {
             $this->discard($upload);
+
+            return false;
         }
 
-        return $promoted;
+        $this->clusters->place($upload);
+
+        return true;
     }
 
     /**
@@ -395,6 +410,7 @@ class WeddingUploadService
 
         $upload->status = WeddingUpload::STATUS_HIDDEN;
         $upload->save();
+        $this->clusters->release($upload);
     }
 
     /**
@@ -474,29 +490,6 @@ class WeddingUploadService
         $upload->multipart_upload_id = null;
         $upload->multipart_part_size_bytes = null;
         $upload->multipart_max_part_number = null;
-    }
-
-    private function findPerceptualDuplicateId(WeddingUpload $upload): ?int
-    {
-        if ($upload->perceptual_hash === null) {
-            return null;
-        }
-
-        $threshold = (int) config('wedding.perceptual_duplicate_distance');
-
-        return WeddingUpload::query()
-            ->ready()
-            ->where('kind', WeddingUpload::KIND_PHOTO)
-            ->whereNotNull('perceptual_hash')
-            ->whereKeyNot($upload->id)
-            ->orderBy('id')
-            ->get(['id', 'perceptual_hash'])
-            ->first(function (WeddingUpload $candidate) use ($upload, $threshold): bool {
-                $distance = PerceptualHash::hammingDistance($upload->perceptual_hash, $candidate->perceptual_hash);
-
-                return $distance !== null && $distance <= $threshold;
-            })
-            ?->id;
     }
 
     public function maxBytesFor(string $kind): int

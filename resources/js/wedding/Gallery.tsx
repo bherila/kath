@@ -1,10 +1,10 @@
-import { Download, ImageIcon, Play, Trash2 } from 'lucide-react';
+import { Download, ImageIcon, Layers, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { safeSameOriginUrl } from '@/security/dom-url';
-import { type GalleryItem, type GalleryPage, requestJson } from '@/wedding/api';
+import { type GalleryItem, type GalleryPage, requestJson, type SimilarList } from '@/wedding/api';
 import { HlsVideoPlayer } from '@/wedding/HlsVideoPlayer';
 
 interface GalleryProps {
@@ -17,7 +17,10 @@ export function Gallery({ refreshKey }: GalleryProps) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The gallery tile that was opened, and the copy of it being viewed (the
+  // tile itself, or one of the near-identical copies collapsed under it).
   const [open, setOpen] = useState<GalleryItem | null>(null);
+  const [viewing, setViewing] = useState<GalleryItem | null>(null);
 
   // Each refresh starts a new generation; responses from an older one (a
   // superseded refresh, or a load-more that a refresh overtook) are dropped
@@ -54,14 +57,22 @@ export function Gallery({ refreshKey }: GalleryProps) {
     void load(null);
   }, [load, refreshKey]);
 
+  const openItem = (item: GalleryItem | null): void => {
+    setOpen(item);
+    setViewing(item);
+  };
+
   const remove = async (item: GalleryItem): Promise<void> => {
     if (!window.confirm('Remove this from the gallery?')) {
       return;
     }
     try {
       await requestJson('DELETE', `/wedding/api/uploads/${item.ulid}`);
+      // Reload rather than drop the tile locally: removing a photo can promote
+      // a near-identical copy, possibly one added since this page loaded.
       setItems((current) => current.filter((candidate) => candidate.ulid !== item.ulid));
-      setOpen(null);
+      void load(null);
+      openItem(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove it.');
     }
@@ -81,10 +92,16 @@ export function Gallery({ refreshKey }: GalleryProps) {
             <button
               type="button"
               className="relative block aspect-square w-full overflow-hidden rounded-sm bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setOpen(item)}
+              onClick={() => openItem(item)}
               aria-label={`Open ${item.kind}${item.guest_name ? ` from ${item.guest_name}` : ''}`}
             >
               <Thumb item={item} />
+              {item.similar_count > 0 && (
+                <span className="absolute right-1 bottom-1 flex items-center gap-0.5 rounded bg-black/60 px-1 text-xs text-white">
+                  <Layers className="size-3" aria-hidden="true" />+{item.similar_count}
+                  <span className="sr-only"> similar</span>
+                </span>
+              )}
               {item.kind === 'video' && (
                 <span className="absolute inset-0 flex items-center justify-center">
                   <span className="rounded-full bg-black/55 p-2 text-white">
@@ -105,26 +122,27 @@ export function Gallery({ refreshKey }: GalleryProps) {
         </div>
       )}
 
-      <Dialog open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
-        {open !== null && (
+      <Dialog open={open !== null} onOpenChange={(next) => !next && openItem(null)}>
+        {open !== null && viewing !== null && (
           <DialogContent className="max-w-[calc(100%-1rem)] gap-3 p-3 sm:max-w-3xl">
             <DialogTitle className="text-base">
-              {open.guest_name ? `Shared by ${open.guest_name}` : 'Shared by a guest'}
+              {viewing.guest_name ? `Shared by ${viewing.guest_name}` : 'Shared by a guest'}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              {open.kind === 'video' ? 'Video' : 'Photo'} from the wedding gallery
+              {viewing.kind === 'video' ? 'Video' : 'Photo'} from the wedding gallery
             </DialogDescription>
-            <Viewer item={open} />
+            <Viewer key={viewing.ulid} item={viewing} />
+            {open.similar_count > 0 && <SimilarCopies item={open} viewing={viewing} onView={setViewing} />}
             <div className="flex flex-wrap justify-end gap-2">
-              {open.mine && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => void remove(open)}>
+              {viewing.mine && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void remove(viewing)}>
                   <Trash2 className="size-4" aria-hidden="true" />
                   Remove
                 </Button>
               )}
-              <SafeLinkButton href={open.original_url}>
+              <SafeLinkButton href={viewing.original_url}>
                 <Download className="size-4" aria-hidden="true" />
-                Download original
+                Download original{dimensionsLabel(viewing)}
               </SafeLinkButton>
             </div>
           </DialogContent>
@@ -136,6 +154,66 @@ export function Gallery({ refreshKey }: GalleryProps) {
 
 interface ItemProps {
   item: GalleryItem;
+}
+
+function dimensionsLabel(item: GalleryItem): string {
+  return item.width !== null && item.height !== null ? ` (${item.width}×${item.height})` : '';
+}
+
+interface SimilarCopiesProps {
+  /** The gallery tile (the best copy). */
+  item: GalleryItem;
+  viewing: GalleryItem;
+  onView: (item: GalleryItem) => void;
+}
+
+/**
+ * The near-identical copies collapsed under a gallery photo (e.g. a resized or
+ * re-sent version), loaded on demand. The tile always shows the best copy.
+ */
+function SimilarCopies({ item, viewing, onView }: SimilarCopiesProps) {
+  const [copies, setCopies] = useState<GalleryItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const show = async (): Promise<void> => {
+    setError(null);
+    try {
+      const list = await requestJson<SimilarList>('GET', `/wedding/api/gallery/${item.ulid}/similar`);
+      setCopies(list.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the other copies.');
+    }
+  };
+
+  if (copies === null) {
+    return (
+      <div className="text-sm">
+        <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => void show()}>
+          <Layers className="size-4" aria-hidden="true" />
+          {item.similar_count === 1 ? '1 similar copy' : `${item.similar_count} similar copies`} (showing the best)
+        </Button>
+        {error !== null && <p className="text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <ul className="flex gap-1 overflow-x-auto" aria-label="Similar copies">
+      {[item, ...copies].map((copy) => (
+        <li key={copy.ulid} className="shrink-0">
+          <button
+            type="button"
+            className={`block size-16 overflow-hidden rounded-sm bg-muted ${copy.ulid === viewing.ulid ? 'ring-2 ring-primary' : ''}`}
+            aria-label={`View ${copy === item ? 'best copy' : 'copy'}${dimensionsLabel(copy)}`}
+            aria-pressed={copy.ulid === viewing.ulid}
+            onClick={() => onView(copy)}
+          >
+            <Thumb item={copy} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function Thumb({ item }: ItemProps) {

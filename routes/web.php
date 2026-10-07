@@ -39,6 +39,7 @@ Route::prefix('wedding')->name('wedding.')->group(function () {
 
         Route::prefix('api')->group(function () {
             Route::get('/gallery', [WeddingGalleryController::class, 'index'])->name('gallery');
+            Route::get('/gallery/{upload}/similar', [WeddingGalleryController::class, 'similar'])->name('gallery.similar');
 
             Route::middleware('throttle:wedding-uploads')->group(function () {
                 Route::post('/uploads/check', [WeddingUploadController::class, 'check'])->name('uploads.check');

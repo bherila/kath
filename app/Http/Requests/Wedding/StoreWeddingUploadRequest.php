@@ -29,8 +29,13 @@ class StoreWeddingUploadRequest extends FormRequest
             'content_type' => ['required', 'string', Rule::in($mimeTypes)],
             'size' => ['required', 'integer', 'min:1'],
             'file_hash' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
-            // Base64 of the 32-byte blockhash.
-            'perceptual_hash' => ['nullable', 'string', 'regex:/^[A-Za-z0-9+\/]{43}=$/'],
+            // Photos: base64 32-byte blockhash of each of the eight
+            // rotation/mirror orientations (index 0 = as displayed), and the
+            // decoded pixel size, used to show the best of near-identical copies.
+            'perceptual_hashes' => ['nullable', 'array', 'size:8'],
+            'perceptual_hashes.*' => ['required', 'string', 'regex:/^[A-Za-z0-9+\/]{43}=$/'],
+            'width' => ['nullable', 'required_with:height', 'integer', 'min:1', 'max:100000'],
+            'height' => ['nullable', 'required_with:width', 'integer', 'min:1', 'max:100000'],
             // Exact byte sizes of the client-made JPEG derivatives; each is
             // signed into its presigned PUT, so storage rejects any other size.
             'display_size' => ['nullable', 'integer', 'min:1', 'max:'.(int) config('wedding.max_bytes.display')],
@@ -62,5 +67,26 @@ class StoreWeddingUploadRequest extends FormRequest
         return in_array($this->input('content_type'), (array) config('wedding.mime_types.video'), true)
             ? WeddingUpload::KIND_VIDEO
             : WeddingUpload::KIND_PHOTO;
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function perceptualHashes(): ?array
+    {
+        $hashes = $this->validated('perceptual_hashes');
+
+        return is_array($hashes) ? array_values(array_map('strval', $hashes)) : null;
+    }
+
+    /**
+     * @return array{width: int, height: int}|null
+     */
+    public function dimensions(): ?array
+    {
+        $width = $this->validated('width');
+        $height = $this->validated('height');
+
+        return $width !== null && $height !== null ? ['width' => (int) $width, 'height' => (int) $height] : null;
     }
 }

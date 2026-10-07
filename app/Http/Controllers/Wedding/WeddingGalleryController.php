@@ -11,8 +11,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * The shared gallery: every ready upload, newest first. Guest emails never
- * leave the server; items show the optional display name only.
+ * The shared gallery: every ready upload, newest first, with near-identical
+ * photos collapsed to their best copy. Guest emails never leave the server;
+ * items show the optional display name only.
  */
 class WeddingGalleryController extends Controller
 {
@@ -22,37 +23,36 @@ class WeddingGalleryController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        /** @var WeddingGuest $guest */
-        $guest = $request->attributes->get('weddingGuest');
-        $tokenHash = $guest->tokenHash();
+        $tokenHash = $this->guestTokenHash($request);
 
+        // One tile per near-identical photo cluster: its best copy, with the
+        // rest counted (and listed by similar()).
         $page = WeddingUpload::query()
             ->ready()
+            ->whereNull('duplicate_of_id')
+            ->withCount('similar')
             ->orderByDesc('id')
             ->cursorPaginate((int) config('wedding.gallery_page_size'));
 
-        // No storage I/O per item: a video's transcode status comes from the
-        // cached content id, and the playback proxy resolves it on demand.
-        $items = collect($page->items())->map(function (WeddingUpload $upload) use ($tokenHash): array {
-            return [
-                'ulid' => $upload->ulid,
-                'kind' => $upload->kind,
-                'guest_name' => $upload->guest_name,
-                'mine' => $upload->isOwnedBy($tokenHash),
-                'created_at' => $upload->created_at->toIso8601String(),
-                'thumb_url' => $upload->thumbnail_key !== null ? $this->variantUrl($upload, 'thumb') : null,
-                'display_url' => $upload->kind === WeddingUpload::KIND_PHOTO ? $this->variantUrl($upload, 'display') : null,
-                'original_url' => $this->variantUrl($upload, 'original'),
-                'master_url' => $upload->isVideo()
-                    ? route('wedding.hls', ['source' => $upload->ulid, 'path' => 'master.m3u8'], false)
-                    : null,
-                'processing' => $upload->isVideo() && ! $upload->isHlsReady(),
-            ];
-        });
+        return response()->json([
+            'items' => collect($page->items())->map(fn (WeddingUpload $upload): array => $this->item($upload, $tokenHash))->values(),
+            'next_cursor' => $page->nextCursor()?->encode(),
+        ]);
+    }
+
+    /**
+     * The other copies collapsed under a gallery photo, best first.
+     */
+    public function similar(Request $request, WeddingUpload $upload): JsonResponse
+    {
+        abort_unless($upload->isReady() && $upload->duplicate_of_id === null, 404);
+        $tokenHash = $this->guestTokenHash($request);
+
+        $copies = $upload->similar()->get()
+            ->sortByDesc(fn (WeddingUpload $copy): array => [$copy->pixels(), $copy->size_bytes ?? 0, -$copy->id]);
 
         return response()->json([
-            'items' => $items->values(),
-            'next_cursor' => $page->nextCursor()?->encode(),
+            'items' => $copies->map(fn (WeddingUpload $copy): array => $this->item($copy, $tokenHash))->values(),
         ]);
     }
 
@@ -81,6 +81,41 @@ class WeddingGalleryController extends Controller
         abort_if($url === null, 404);
 
         return redirect()->away($url, 302)->header('Cache-Control', 'private, max-age=300');
+    }
+
+    private function guestTokenHash(Request $request): string
+    {
+        /** @var WeddingGuest $guest */
+        $guest = $request->attributes->get('weddingGuest');
+
+        return $guest->tokenHash();
+    }
+
+    /**
+     * One gallery item. No storage I/O: a video's transcode status comes from
+     * the cached content id, and the playback proxy resolves it on demand.
+     *
+     * @return array<string, mixed>
+     */
+    private function item(WeddingUpload $upload, string $tokenHash): array
+    {
+        return [
+            'ulid' => $upload->ulid,
+            'kind' => $upload->kind,
+            'guest_name' => $upload->guest_name,
+            'mine' => $upload->isOwnedBy($tokenHash),
+            'created_at' => $upload->created_at->toIso8601String(),
+            'width' => $upload->width,
+            'height' => $upload->height,
+            'similar_count' => (int) ($upload->similar_count ?? 0),
+            'thumb_url' => $upload->thumbnail_key !== null ? $this->variantUrl($upload, 'thumb') : null,
+            'display_url' => $upload->kind === WeddingUpload::KIND_PHOTO ? $this->variantUrl($upload, 'display') : null,
+            'original_url' => $this->variantUrl($upload, 'original'),
+            'master_url' => $upload->isVideo()
+                ? route('wedding.hls', ['source' => $upload->ulid, 'path' => 'master.m3u8'], false)
+                : null,
+            'processing' => $upload->isVideo() && ! $upload->isHlsReady(),
+        ];
     }
 
     private function variantUrl(WeddingUpload $upload, string $variant): string

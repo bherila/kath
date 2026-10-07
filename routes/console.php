@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Wedding\HlsService;
+use App\Services\Wedding\PhotoClusterService;
 use App\Services\Wedding\WeddingUploadService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -22,3 +23,7 @@ Artisan::command('wedding:resolve-videos', function (HlsService $hls) {
 })->purpose('Pick up finished HLS transcodes for guest videos and hide duplicate videos');
 
 Schedule::command('wedding:resolve-videos')->everyFiveMinutes()->withoutOverlapping();
+
+Artisan::command('wedding:recluster-photos', function (PhotoClusterService $clusters) {
+    $this->info($clusters->rebuild().' photo(s) shown under a better copy.');
+})->purpose('Rebuild near-identical photo clusters from stored hashes (e.g. after changing the match distance)');

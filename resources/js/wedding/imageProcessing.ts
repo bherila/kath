@@ -33,8 +33,14 @@ export interface PhotoDerivatives {
   thumbnail: Blob;
   /** Phone-screen-sized JPEG, so viewers never download the original. */
   display: Blob;
-  /** Base64-encoded 32-byte perceptual hash of the normalized image. */
-  perceptualHash: string;
+  /**
+   * Base64-encoded 32-byte blockhash of each of the eight rotation/mirror
+   * orientations; index 0 is the image as displayed.
+   */
+  perceptualHashes: string[];
+  /** Decoded pixel size (after the camera's orientation is applied). */
+  width: number;
+  height: number;
 }
 
 /**
@@ -83,12 +89,12 @@ export function supportsClientDerivatives(): boolean {
 export async function generatePhotoDerivatives(file: File): Promise<PhotoDerivatives> {
   const bitmap = await createImageBitmap(file);
   try {
-    const [thumbnail, display, perceptualHash] = await Promise.all([
+    const [thumbnail, display, perceptualHashes] = await Promise.all([
       resizeToMaxEdge(bitmap, THUMBNAIL_MAX_EDGE, THUMBNAIL_QUALITY),
       resizeToMaxEdge(bitmap, DISPLAY_MAX_EDGE, DISPLAY_QUALITY),
-      computePerceptualHash(bitmap),
+      computePerceptualHashes(bitmap),
     ]);
-    return { thumbnail, display, perceptualHash };
+    return { thumbnail, display, perceptualHashes, width: bitmap.width, height: bitmap.height };
   } finally {
     bitmap.close();
   }
@@ -141,30 +147,32 @@ export async function generateVideoPoster(file: File): Promise<Blob | null> {
 }
 
 /**
- * Compute a 256-bit perceptual hash from an ImageBitmap, returned as a
- * base64-encoded 32-byte string. The bitmap is downscaled to PHASH_MAX_EDGE
- * first to cap memory.
+ * Compute the 256-bit blockhash of the image in each of the eight dihedral
+ * orientations (four 90° rotations × a mirror), base64-encoded, index 0 being
+ * the image as displayed. The server compares two photos at their
+ * best-matching orientation, so a rotated or mirrored copy still matches;
+ * blockhash itself is scale-invariant, so a resized copy does too. (Arbitrary
+ * rotations and large crops still need feature matching.)
  *
- * The hash is canonicalized over the eight dihedral orientations (four 90°
- * rotations × a mirror): the blockhash of those orientations forms an orbit that
- * is identical for an image and any 90°-rotated/mirrored copy, so taking the
- * lexicographically smallest as canonical makes the hash invariant to those
- * transforms. Combined with blockhash's built-in scale invariance, a re-upload
- * that was rotated, flipped, and/or resized produces the same (or a near-equal)
- * hash. (Arbitrary-angle rotation and large crops still need feature matching.)
+ * The bitmap is downscaled once to PHASH_MAX_EDGE to cap memory, and each
+ * orientation is drawn from that small copy.
  */
-export async function computePerceptualHash(bitmap: ImageBitmap): Promise<string> {
+export async function computePerceptualHashes(bitmap: ImageBitmap): Promise<string[]> {
   const [w, h] = fitWithin(bitmap.width, bitmap.height, PHASH_MAX_EDGE);
-
-  let canonicalHex: string | null = null;
-  for (let orientation = 0; orientation < 8; orientation++) {
-    const hex = blockhashForOrientation(bitmap, w, h, orientation);
-    if (canonicalHex === null || hex < canonicalHex) {
-      canonicalHex = hex;
-    }
+  const small = new OffscreenCanvas(w, h);
+  const ctx = small.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not get 2d context from OffscreenCanvas');
   }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
 
-  return hexToBase64(canonicalHex ?? '');
+  const hashes: string[] = [];
+  for (let orientation = 0; orientation < 8; orientation++) {
+    hashes.push(hexToBase64(blockhashForOrientation(small, w, h, orientation)));
+  }
+  return hashes;
 }
 
 /**
@@ -173,7 +181,7 @@ export async function computePerceptualHash(bitmap: ImageBitmap): Promise<string
  * source is drawn into a canvas sized for the rotation (width/height swap on the
  * 90°/270° cases) so nothing is clipped.
  */
-function blockhashForOrientation(bitmap: ImageBitmap, w: number, h: number, orientation: number): string {
+function blockhashForOrientation(source: OffscreenCanvas, w: number, h: number, orientation: number): string {
   const rotation = orientation % 4;
   const mirror = orientation >= 4;
   const swap = rotation === 1 || rotation === 3;
@@ -205,7 +213,7 @@ function blockhashForOrientation(bitmap: ImageBitmap, w: number, h: number, orie
     ctx.translate(0, ch);
     ctx.rotate(-Math.PI / 2);
   }
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  ctx.drawImage(source, 0, 0, w, h);
 
   // bmvbhash returns a 64-char hex string (256 bits for bits=16).
   return bmvbhash(ctx.getImageData(0, 0, cw, ch), PHASH_BITS);
