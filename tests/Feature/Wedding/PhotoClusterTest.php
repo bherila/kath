@@ -247,6 +247,21 @@ class PhotoClusterTest extends WeddingTestCase
         $this->assertNull($best->refresh()->duplicate_of_id);
     }
 
+    public function test_rebuild_returns_a_split_off_photo_to_its_own_time(): void
+    {
+        // Was the best copy of a cluster and took a smaller copy's capture
+        // time; that copy no longer matches (e.g. a bridging photo is gone).
+        $former = $this->makeUpload([
+            'perceptual_hashes' => $this->hashes(),
+            'created_at' => '2026-09-28 18:00:00',
+            'taken_at' => '2026-09-27 23:00:00',
+        ]);
+
+        $this->artisan('wedding:recluster-photos')->assertSuccessful();
+
+        $this->assertSame('2026-09-28 18:00:00', $former->refresh()->taken_at?->toDateTimeString());
+    }
+
     public function test_store_validates_hashes_and_dimensions(): void
     {
         $this->enterAs();

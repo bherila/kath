@@ -7,6 +7,7 @@ use App\Support\PerceptualHash;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Groups near-identical photos (the same shot resized, recompressed, rotated
@@ -87,10 +88,14 @@ class PhotoClusterService
      */
     public function rebuild(): int
     {
+        // Start from unclustered photos at their own times: a former best copy
+        // that no longer matches anything must not keep its old cluster's.
         WeddingUpload::query()
             ->where('kind', WeddingUpload::KIND_PHOTO)
-            ->whereNotNull('duplicate_of_id')
-            ->update(['duplicate_of_id' => null]);
+            ->update([
+                'duplicate_of_id' => null,
+                'taken_at' => DB::raw('COALESCE(captured_at, created_at)'),
+            ]);
 
         $this->readyPhotos()
             ->whereNotNull('perceptual_hashes')
