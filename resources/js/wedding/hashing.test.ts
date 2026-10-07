@@ -11,18 +11,6 @@ function bytes(length: number): Uint8Array<ArrayBuffer> {
   return data;
 }
 
-// jsdom's Blob lacks arrayBuffer() (every browser this targets has it).
-if (typeof Blob.prototype.arrayBuffer !== 'function') {
-  Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(this);
-    });
-  };
-}
-
 describe('computeFileHash', () => {
   const realCrypto = globalThis.crypto;
 

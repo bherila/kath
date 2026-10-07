@@ -115,7 +115,7 @@ class PhotoClusterTest extends WeddingTestCase
         $a = $this->uploadPhoto($this->hashes(), 4032, 3024);
         $b = $this->uploadPhoto($this->hashes(), 4032, 3024);
 
-        $this->assertSame([$b, $a], $this->galleryUlids());
+        $this->assertSame([$a, $b], $this->galleryUlids());
     }
 
     public function test_a_photo_bridging_two_clusters_merges_them_under_the_best(): void
@@ -125,7 +125,7 @@ class PhotoClusterTest extends WeddingTestCase
         $right = $this->nearCopy($left, 16); // too far apart to match directly
         $a = $this->uploadPhoto($left, 1080, 810);
         $b = $this->uploadPhoto($right, 2048, 1536);
-        $this->assertSame([$b, $a], $this->galleryUlids());
+        $this->assertSame([$a, $b], $this->galleryUlids());
 
         $bridge = $this->uploadPhoto($this->nearCopy($left, 8), 4032, 3024); // 8 bits from each
 
@@ -198,7 +198,7 @@ class PhotoClusterTest extends WeddingTestCase
         Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $ulid)->sole()->object_key, str_repeat('x', 10));
         $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
 
-        $this->assertSame([$ulid, $hashed], $this->galleryUlids());
+        $this->assertSame([$hashed, $ulid], $this->galleryUlids());
     }
 
     public function test_releasing_a_copy_follows_a_representative_demoted_since(): void

@@ -31,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property ?list<string> $perceptual_hashes
  * @property ?int $width
  * @property ?int $height
+ * @property ?Carbon $captured_at When it was taken (from its metadata), if known
+ * @property ?Carbon $taken_at Gallery order: captured_at, else the upload time
  * @property ?int $duplicate_of_id For a photo: the best copy of its near-identical
  *                                 cluster, which the gallery shows instead. For a
  *                                 hidden video: the earlier byte-identical copy.
@@ -77,6 +79,8 @@ class WeddingUpload extends Model
         'perceptual_hashes',
         'width',
         'height',
+        'captured_at',
+        'taken_at',
     ];
 
     protected $hidden = [
@@ -98,7 +102,18 @@ class WeddingUpload extends Model
             'multipart_part_size_bytes' => 'integer',
             'multipart_max_part_number' => 'integer',
             'hls_checked_at' => 'datetime',
+            'captured_at' => 'datetime',
+            'taken_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Every row gets a gallery position: when it was taken if known,
+        // else when it was uploaded.
+        static::creating(function (WeddingUpload $upload): void {
+            $upload->taken_at ??= $upload->captured_at ?? $upload->created_at ?? now();
+        });
     }
 
     public function getRouteKeyName(): string

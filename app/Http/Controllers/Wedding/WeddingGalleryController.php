@@ -11,7 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * The shared gallery: every ready upload, newest first, with near-identical
+ * The shared gallery: every ready upload in the order it was taken, with near-identical
  * photos collapsed to their best copy. Guest emails never leave the server;
  * items show the optional display name only.
  */
@@ -25,13 +25,15 @@ class WeddingGalleryController extends Controller
     {
         $tokenHash = $this->guestTokenHash($request);
 
-        // One tile per near-identical photo cluster: its best copy, with the
-        // rest counted (and listed by similar()).
+        // In the order things happened (capture time, else upload time), one
+        // tile per near-identical photo cluster: its best copy, with the rest
+        // counted (and listed by similar()).
         $page = WeddingUpload::query()
             ->ready()
             ->whereNull('duplicate_of_id')
             ->withCount('similar')
-            ->orderByDesc('id')
+            ->orderBy('taken_at')
+            ->orderBy('id')
             ->cursorPaginate((int) config('wedding.gallery_page_size'));
 
         return response()->json([
@@ -105,6 +107,7 @@ class WeddingGalleryController extends Controller
             'guest_name' => $upload->guest_name,
             'mine' => $upload->isOwnedBy($tokenHash),
             'created_at' => $upload->created_at->toIso8601String(),
+            'captured_at' => $upload->captured_at?->toIso8601String(),
             'width' => $upload->width,
             'height' => $upload->height,
             'similar_count' => (int) ($upload->similar_count ?? 0),

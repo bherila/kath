@@ -79,6 +79,8 @@ export interface GalleryItem {
   guest_name: string | null;
   mine: boolean;
   created_at: string;
+  /** When it was taken, from its own metadata; the gallery is in this order. */
+  captured_at: string | null;
   /** Photos: decoded pixel size, when the uploader's browser could decode it. */
   width: number | null;
   height: number | null;

@@ -127,6 +127,9 @@ export function Gallery({ refreshKey }: GalleryProps) {
           <DialogContent className="max-w-[calc(100%-1rem)] gap-3 p-3 sm:max-w-3xl">
             <DialogTitle className="text-base">
               {viewing.guest_name ? `Shared by ${viewing.guest_name}` : 'Shared by a guest'}
+              {viewing.captured_at !== null && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">{formatTaken(viewing.captured_at)}</span>
+              )}
             </DialogTitle>
             <DialogDescription className="sr-only">
               {viewing.kind === 'video' ? 'Video' : 'Photo'} from the wedding gallery
@@ -154,6 +157,13 @@ export function Gallery({ refreshKey }: GalleryProps) {
 
 interface ItemProps {
   item: GalleryItem;
+}
+
+const TAKEN_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+function formatTaken(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : TAKEN_FORMAT.format(date);
 }
 
 function dimensionsLabel(item: GalleryItem): string {

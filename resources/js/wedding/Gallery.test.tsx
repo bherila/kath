@@ -17,6 +17,7 @@ function photo(name: string, overrides: Partial<GalleryItem> = {}): GalleryItem 
     guest_name: name,
     mine: false,
     created_at: '2026-10-04T00:00:00Z',
+    captured_at: null,
     width: null,
     height: null,
     similar_count: 0,

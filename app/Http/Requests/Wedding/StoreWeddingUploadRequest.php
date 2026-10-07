@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Wedding;
 
 use App\Models\WeddingUpload;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -34,6 +35,8 @@ class StoreWeddingUploadRequest extends FormRequest
             // decoded pixel size, used to show the best of near-identical copies.
             'perceptual_hashes' => ['nullable', 'array', 'size:8'],
             'perceptual_hashes.*' => ['required', 'string', 'regex:/^[A-Za-z0-9+\/]{43}=$/'],
+            // When it was taken, from the file's EXIF/QuickTime metadata.
+            'captured_at' => ['nullable', 'date'],
             'width' => ['nullable', 'required_with:height', 'integer', 'min:1', 'max:100000'],
             'height' => ['nullable', 'required_with:width', 'integer', 'min:1', 'max:100000'],
             // Exact byte sizes of the client-made JPEG derivatives; each is
@@ -88,5 +91,21 @@ class StoreWeddingUploadRequest extends FormRequest
         $height = $this->validated('height');
 
         return $width !== null && $height !== null ? ['width' => (int) $width, 'height' => (int) $height] : null;
+    }
+
+    /**
+     * The reported capture time, or null when missing or implausible (a
+     * camera clock that was never set, or one in the future).
+     */
+    public function capturedAt(): ?CarbonImmutable
+    {
+        $value = $this->validated('captured_at');
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $capturedAt = CarbonImmutable::parse($value)->utc();
+
+        return $capturedAt->year >= 2000 && $capturedAt->lte(now()->addDay()) ? $capturedAt : null;
     }
 }

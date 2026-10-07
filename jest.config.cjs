@@ -6,6 +6,8 @@ const config = {
   setupFilesAfterEnv: ['<rootDir>/tests-ts/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/resources/js/$1',
+    // The app lazy-loads exifr's ESM lite build; Jest gets the CommonJS one.
+    '^exifr/dist/lite\\.esm\\.mjs$': '<rootDir>/node_modules/exifr/dist/lite.umd.cjs',
   },
   transformIgnorePatterns: [
     // pnpm resolves packages to node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>.
