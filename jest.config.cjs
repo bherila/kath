@@ -8,11 +8,14 @@ const config = {
     '^@/(.*)$': '<rootDir>/resources/js/$1',
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!dayjs).+\\.js$',
+    // pnpm resolves packages to node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>.
+    '/node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(dayjs|@noble)/).+\\.js$',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+    // ESM-only dependencies (e.g. @noble/hashes), compiled to CommonJS for Jest.
+    '^.+/node_modules/.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true, module: 'commonjs' } }],
   },
 };
 

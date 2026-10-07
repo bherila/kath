@@ -64,7 +64,9 @@ return [
     'view_url_ttl' => 60,
 
     'multipart' => [
-        'threshold_bytes' => (int) env('WEDDING_MULTIPART_THRESHOLD_BYTES', 100 * 1024 * 1024),
+        // Videos from this size upload in parts: a dropped connection retries
+        // one part, and a reload resumes from the last finished one.
+        'threshold_bytes' => (int) env('WEDDING_MULTIPART_THRESHOLD_BYTES', 32 * 1024 * 1024),
         'part_size_bytes' => (int) env('WEDDING_MULTIPART_PART_SIZE_BYTES', 16 * 1024 * 1024),
         'url_ttl' => 30,
         'max_parts' => 10_000,

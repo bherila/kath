@@ -1,3 +1,5 @@
+import { ApiError } from '@/wedding/api';
+
 /**
  * PUT a file to a presigned URL using XHR so we can report progress (the fetch
  * API does not expose upload progress). The headers must be exactly those the
@@ -46,7 +48,13 @@ interface UploadMultipartFileOptions {
   signal?: AbortSignal;
 }
 
-const MAX_PART_RETRIES = 3;
+/**
+ * Attempts per request. With the backoff below a request rides out roughly a
+ * minute of trouble (a phone hopping from Wi-Fi to cellular), and time spent
+ * offline doesn't count.
+ */
+const MAX_ATTEMPTS = 6;
+const MAX_BACKOFF_MS = 20_000;
 
 export function putToSignedUrl(
   url: string,
@@ -189,7 +197,7 @@ function putBlobToSignedUrl(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve({ etag: xhr.getResponseHeader('ETag') });
       } else {
-        reject(new Error(`Upload failed (HTTP ${xhr.status}).`));
+        reject(new ApiError(xhr.status, `Upload failed (HTTP ${xhr.status}).`));
       }
     };
 
@@ -235,9 +243,16 @@ function reportMultipartProgress(
   onProgress(Math.min(1, (completedBytes + activePartLoadedBytes) / file.size));
 }
 
-async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+/**
+ * Run a request, retrying transient failures with exponential backoff (1s,
+ * 2s, 4s, …). While the browser reports itself offline, wait for it to
+ * reconnect before the next attempt instead of burning attempts on a dead
+ * network. A definitive answer (e.g. 404 for an expired upload session) is
+ * thrown at once, so callers can recover from it without waiting.
+ */
+export async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_PART_RETRIES; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     if (signal?.aborted) {
       throw new DOMException('Upload canceled.', 'AbortError');
     }
@@ -250,13 +265,43 @@ async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal)
       }
 
       lastError = err;
-      if (attempt < MAX_PART_RETRIES) {
-        await delay(500 * attempt, signal);
+      if (!isTransient(err)) {
+        throw err;
+      }
+      if (attempt < MAX_ATTEMPTS) {
+        await delay(Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS), signal);
+        await waitUntilOnline(signal);
       }
     }
   }
 
   throw lastError instanceof Error ? lastError : new Error('Upload failed.');
+}
+
+/** Network failures, server errors, timeouts and rate limits are worth retrying. */
+function isTransient(err: unknown): boolean {
+  return !(err instanceof ApiError) || err.status >= 500 || err.status === 408 || err.status === 429;
+}
+
+function waitUntilOnline(signal?: AbortSignal): Promise<void> {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const done = (): void => {
+      window.removeEventListener('online', done);
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    };
+    const abort = (): void => {
+      window.removeEventListener('online', done);
+      reject(new DOMException('Upload canceled.', 'AbortError'));
+    };
+
+    window.addEventListener('online', done);
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
