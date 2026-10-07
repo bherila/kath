@@ -13,6 +13,7 @@ import { UploadPanel } from '@/wedding/UploadPanel';
 
 interface WeddingBootstrap {
   guest: { name: string | null; email: string };
+  event_timezone: string;
   ceremony: { master_url: string | null };
   limits: UploadLimits;
 }
@@ -79,7 +80,7 @@ function WeddingHub({ data }: WeddingHubProps) {
           <CardTitle>Gallery</CardTitle>
         </CardHeader>
         <CardContent>
-          <Gallery refreshKey={galleryKey} />
+          <Gallery refreshKey={galleryKey} eventTimeZone={data.event_timezone} />
         </CardContent>
       </Card>
 

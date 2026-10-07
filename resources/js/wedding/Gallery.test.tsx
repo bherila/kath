@@ -91,4 +91,14 @@ describe('Gallery', () => {
 
     expect(await screen.findByLabelText(/Open photo from copy/)).toBeInTheDocument();
   });
+
+  it('labels capture times in the event time zone, not the viewer\'s', async () => {
+    request.mockResolvedValue({ next_cursor: null, items: [photo('p', { captured_at: '2026-09-28T00:04:12+00:00' })] });
+
+    render(<Gallery refreshKey={0} eventTimeZone="America/Los_Angeles" />);
+    fireEvent.click(await screen.findByLabelText(/Open photo from p/));
+
+    // 00:04 UTC is 5:04 PM the previous day in Los Angeles.
+    expect(screen.getByRole('heading')).toHaveTextContent(/Sep 27.*5:04/);
+  });
 });

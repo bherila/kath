@@ -29,6 +29,8 @@ class WeddingController extends Controller
         return view('wedding.hub', [
             'bootstrap' => [
                 'guest' => ['name' => $guest->name, 'email' => $guest->email],
+                // Capture times are shown as the event's local time.
+                'event_timezone' => (string) config('wedding.event_timezone'),
                 'ceremony' => [
                     'master_url' => $this->hls->resolveCeremony() !== null
                         ? route('wedding.hls', ['source' => 'ceremony', 'path' => 'master.m3u8'], false)
