@@ -61,9 +61,8 @@ describe('capture time', () => {
     await expect(readCaptureTime(jpegWithExif('2026:09:27 17:04:12', '-07:00'), 'photo')).resolves.toBe('2026-09-28T00:04:12.000Z');
   });
 
-  it('reads a photo without an offset in local time', async () => {
-    const expected = new Date(2026, 8, 27, 17, 4, 12).toISOString();
-    await expect(readCaptureTime(jpegWithExif('2026:09:27 17:04:12', null), 'photo')).resolves.toBe(expected);
+  it('sends an offset-less photo time as wall-clock time for the event zone', async () => {
+    await expect(readCaptureTime(jpegWithExif('2026:09:27 17:04:12', null), 'photo')).resolves.toBe('2026-09-27T17:04:12');
   });
 
   it('prefers Apple\'s creation date in a video over the movie header', async () => {
@@ -84,14 +83,14 @@ describe('capture time', () => {
   });
 
   it('ignores a malformed offset rather than misreading the time', () => {
-    expect(parseExifDate('2026:09:27 17:04:12', 'local')).toEqual(new Date(2026, 8, 27, 17, 4, 12));
+    expect(parseExifDate('2026:09:27 17:04:12', 'local')).toBe('2026-09-27T17:04:12');
   });
 
   it('pairs each EXIF date only with its own offset tag', async () => {
     // OffsetTime (0x9010) is the modification date's offset, e.g. an edit
     // made in another time zone; it must not shift the capture time.
     const edited = jpegWithTags({ 0x9003: '2026:09:27 17:04:12', 0x9010: '+09:00' });
-    await expect(readCaptureTime(edited, 'photo')).resolves.toBe(new Date(2026, 8, 27, 17, 4, 12).toISOString());
+    await expect(readCaptureTime(edited, 'photo')).resolves.toBe('2026-09-27T17:04:12');
 
     const digitized = jpegWithTags({ 0x9004: '2026:09:27 17:04:12', 0x9010: '+09:00', 0x9012: '-07:00' });
     await expect(readCaptureTime(digitized, 'photo')).resolves.toBe('2026-09-28T00:04:12.000Z');

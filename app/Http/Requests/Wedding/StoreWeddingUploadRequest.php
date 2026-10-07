@@ -95,7 +95,8 @@ class StoreWeddingUploadRequest extends FormRequest
 
     /**
      * The reported capture time, or null when missing or implausible (a
-     * camera clock that was never set, or one in the future).
+     * camera clock that was never set, or one in the future). A time with no
+     * offset is the camera's wall clock, read in the event's time zone.
      */
     public function capturedAt(): ?CarbonImmutable
     {
@@ -104,7 +105,10 @@ class StoreWeddingUploadRequest extends FormRequest
             return null;
         }
 
-        $capturedAt = CarbonImmutable::parse($value)->utc();
+        $hasOffset = preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', $value) === 1;
+        $capturedAt = ($hasOffset
+            ? CarbonImmutable::parse($value)
+            : CarbonImmutable::parse($value, (string) config('wedding.event_timezone')))->utc();
 
         return $capturedAt->year >= 2000 && $capturedAt->lte(now()->addDay()) ? $capturedAt : null;
     }

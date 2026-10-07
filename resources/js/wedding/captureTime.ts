@@ -3,9 +3,10 @@
  * the gallery can run in the order things happened rather than the order
  * guests got around to uploading them.
  *
- * - Photos: EXIF DateTimeOriginal (or CreateDate), with OffsetTimeOriginal
- *   when the camera wrote one. Without an offset the time is taken as the
- *   uploader's local time — guests' phones are on the event's clock.
+ * - Photos: EXIF DateTimeOriginal (or CreateDate), with its own offset tag
+ *   when the camera wrote one. Without an offset the camera's wall-clock time
+ *   is sent as is, and the server reads it in the event's time zone (a guest
+ *   may upload after flying home, so this browser's zone can be wrong).
  * - Videos: QuickTime/MP4 metadata. Apple's com.apple.quicktime.creationdate
  *   (local time with offset, and kept when Photos exports a copy) wins over
  *   the movie header's creation time (UTC).
@@ -25,22 +26,36 @@ const MAX_TOP_LEVEL_BOXES = 1_000;
 
 const APPLE_CREATION_DATE_KEY = 'com.apple.quicktime.creationdate';
 
-/** Capture time as an ISO 8601 UTC instant, or null when unknown. */
+/**
+ * A capture time: an exact instant, or a camera wall-clock time with no
+ * offset ("YYYY-MM-DDTHH:MM:SS") for the server to place in the event's zone.
+ */
+type CaptureTime = Date | string;
+
+/**
+ * Capture time as an ISO 8601 UTC instant, or as an offset-less local time
+ * ("2026-09-27T17:04:12"), or null when unknown.
+ */
 export async function readCaptureTime(file: File, kind: FileKind): Promise<string | null> {
   try {
     // Candidates in order of preference; a reset or future clock in one
     // source falls through to the next.
     const candidates = kind === 'photo' ? await readPhotoCaptureTimes(file) : await readVideoCaptureTimes(file);
-    return candidates.find(isPlausible)?.toISOString() ?? null;
+    const chosen = candidates.find(isPlausible);
+    return chosen === undefined ? null : typeof chosen === 'string' ? chosen : chosen.toISOString();
   } catch {
     return null;
   }
 }
 
-/** Clocks reset to 1970/2000 and far-future dates are not capture times. */
-function isPlausible(date: Date): boolean {
-  const time = date.getTime();
-  return Number.isFinite(time) && date.getUTCFullYear() >= 2000 && time <= Date.now() + 24 * 60 * 60 * 1000;
+/**
+ * Clocks reset to 1970/2000 and far-future dates are not capture times. A
+ * local time is checked as if UTC, with slack for any zone.
+ */
+function isPlausible(time: CaptureTime): boolean {
+  const date = typeof time === 'string' ? new Date(`${time}Z`) : time;
+  const ms = date.getTime();
+  return Number.isFinite(ms) && date.getUTCFullYear() >= 2000 && ms <= Date.now() + 2 * 24 * 60 * 60 * 1000;
 }
 
 /** EXIF tags read, by id (exifr's lite build may not translate names). */
@@ -51,7 +66,7 @@ const EXIF_TAGS = {
   OffsetTimeDigitized: 0x9012,
 } as const;
 
-async function readPhotoCaptureTimes(file: File): Promise<Date[]> {
+async function readPhotoCaptureTimes(file: File): Promise<CaptureTime[]> {
   const { default: exifr } = await import('exifr/dist/lite.esm.mjs');
   const tags = (await exifr.parse(file, {
     // The capture date lives in the Exif IFD (reached through IFD0, which
@@ -75,27 +90,25 @@ async function readPhotoCaptureTimes(file: File): Promise<Date[]> {
   return [
     original === null ? null : parseExifDate(original, text(EXIF_TAGS.OffsetTimeOriginal)),
     digitized === null ? null : parseExifDate(digitized, text(EXIF_TAGS.OffsetTimeDigitized)),
-  ].filter((date): date is Date => date !== null);
+  ].filter((time): time is CaptureTime => time !== null);
 }
 
 /**
- * EXIF "YYYY:MM:DD HH:MM:SS" with an optional "+HH:MM" offset. Without an
- * offset the time is read as this browser's local time.
+ * EXIF "YYYY:MM:DD HH:MM:SS" with an optional "+HH:MM" offset: an instant
+ * when the offset is known, else the offset-less local time as a string.
  */
-export function parseExifDate(value: string, offset: string | null): Date | null {
+export function parseExifDate(value: string, offset: string | null): CaptureTime | null {
   const match = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(value.trim());
   if (match === null) {
     return null;
   }
   const [, year, month, day, hour, minute, second] = match;
   const zone = offset !== null && /^[+-]\d{2}:\d{2}$/.test(offset.trim()) ? offset.trim() : null;
-  if (zone !== null) {
-    return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}${zone}`);
-  }
-  return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+  const local = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  return zone === null ? local : new Date(`${local}${zone}`);
 }
 
-async function readVideoCaptureTimes(file: File): Promise<Date[]> {
+async function readVideoCaptureTimes(file: File): Promise<CaptureTime[]> {
   const moov = await readTopLevelBox(file, 'moov');
   return moov === null ? [] : parseMoovCaptureTimes(moov);
 }

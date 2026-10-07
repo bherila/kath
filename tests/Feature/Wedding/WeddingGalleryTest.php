@@ -102,10 +102,14 @@ class WeddingGalleryTest extends WeddingTestCase
         $unset = $this->postJson('/wedding/api/uploads', $payload('1970-01-01T00:00:00Z', 'b'))->assertCreated()->json('ulid');
         $future = $this->postJson('/wedding/api/uploads', $payload(now()->addYear()->toIso8601String(), 'c'))->assertCreated()->json('ulid');
         $this->postJson('/wedding/api/uploads', $payload('not a date', 'd'))->assertUnprocessable()->assertJsonValidationErrors('captured_at');
+        // No offset: the camera's wall clock, at the event (LA, UTC-7 in September).
+        config(['wedding.event_timezone' => 'America/Los_Angeles']);
+        $local = $this->postJson('/wedding/api/uploads', $payload('2026-09-27T17:04:12', 'e'))->assertCreated()->json('ulid');
 
         $row = fn (string $ulid): WeddingUpload => WeddingUpload::query()->where('ulid', $ulid)->sole();
         $this->assertSame('2026-09-28 00:04:12', $row($taken)->captured_at?->utc()->toDateTimeString());
         $this->assertTrue($row($taken)->taken_at?->eq($row($taken)->captured_at));
+        $this->assertSame('2026-09-28 00:04:12', $row($local)->captured_at?->utc()->toDateTimeString());
         $this->assertNull($row($unset)->captured_at);
         $this->assertNull($row($future)->captured_at);
         $this->assertNotNull($row($future)->taken_at);
