@@ -68,12 +68,10 @@ export function Gallery({ refreshKey }: GalleryProps) {
     }
     try {
       await requestJson('DELETE', `/wedding/api/uploads/${item.ulid}`);
-      if (open !== null && open.similar_count > 0) {
-        // A cluster changed: another copy may now be the one shown.
-        void load(null);
-      } else {
-        setItems((current) => current.filter((candidate) => candidate.ulid !== item.ulid));
-      }
+      // Reload rather than drop the tile locally: removing a photo can promote
+      // a near-identical copy, possibly one added since this page loaded.
+      setItems((current) => current.filter((candidate) => candidate.ulid !== item.ulid));
+      void load(null);
       openItem(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove it.');

@@ -71,4 +71,23 @@ describe('Gallery', () => {
     expect(screen.getByRole('link', { name: /Download original \(1080×810\)/ })).toHaveAttribute('href', 'http://localhost/wedding/media/small/original');
     expect(screen.getByRole('button', { name: 'View best copy (4032×3024)' })).toHaveAttribute('aria-pressed', 'false');
   });
+
+  it('reloads after a removal, showing a copy promoted in its place', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    let removed = false;
+    request.mockImplementation(async (method: string) => {
+      if (method === 'DELETE') {
+        removed = true;
+        return {};
+      }
+      // The tile looked like a single photo, but a copy arrived meanwhile.
+      return { next_cursor: null, items: [removed ? photo('copy') : photo('mine', { mine: true })] };
+    });
+
+    render(<Gallery refreshKey={0} />);
+    fireEvent.click(await screen.findByLabelText(/Open photo from mine/));
+    fireEvent.click(screen.getByRole('button', { name: /Remove/ }));
+
+    expect(await screen.findByLabelText(/Open photo from copy/)).toBeInTheDocument();
+  });
 });
