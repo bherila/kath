@@ -47,7 +47,7 @@ class PhotoClusterTest extends WeddingTestCase
      *
      * @param  list<string>  $hashes
      */
-    private function uploadPhoto(array $hashes, int $width, int $height, int $size = 2048): string
+    private function uploadPhoto(array $hashes, int $width, int $height, int $size = 2048, ?string $capturedAt = null): string
     {
         $ulid = $this->postJson('/wedding/api/uploads', [
             'filename' => 'IMG.JPG',
@@ -57,6 +57,7 @@ class PhotoClusterTest extends WeddingTestCase
             'perceptual_hashes' => $hashes,
             'width' => $width,
             'height' => $height,
+            'captured_at' => $capturedAt,
         ])->assertCreated()->json('ulid');
         Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $ulid)->sole()->object_key, str_repeat('x', $size));
         $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
@@ -82,6 +83,19 @@ class PhotoClusterTest extends WeddingTestCase
         $this->assertSame([$full], $this->galleryUlids());
         $this->getJson('/wedding/api/gallery')->assertJsonPath('items.0.similar_count', 1)->assertJsonPath('items.0.width', 4032);
         $this->assertSame([$small], array_column($this->getJson("/wedding/api/gallery/{$full}/similar")->assertOk()->json('items'), 'ulid'));
+    }
+
+    public function test_the_tile_keeps_a_capture_time_only_a_smaller_copy_knows(): void
+    {
+        $this->travelTo('2026-09-28 18:00:00');
+        $this->enterAs();
+        $other = $this->uploadPhoto($this->hashes(), 4032, 3024, capturedAt: '2026-09-27T23:30:00Z');
+        $hashes = $this->hashes();
+        $this->uploadPhoto($hashes, 1080, 810, capturedAt: '2026-09-27T23:00:00Z');
+        // The full-size copy arrives with its metadata stripped.
+        $best = $this->uploadPhoto($this->nearCopy($hashes), 4032, 3024);
+
+        $this->assertSame([$best, $other], $this->galleryUlids());
     }
 
     public function test_a_later_smaller_copy_joins_under_the_existing_best(): void

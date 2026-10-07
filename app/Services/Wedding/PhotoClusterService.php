@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Cache;
  * or mirrored: within `wedding.perceptual_duplicate_distance` of each other)
  * into clusters, and makes each cluster's best copy — most pixels, then most
  * bytes, then earliest — its representative. The gallery shows only
- * representatives; the rest stay ready and are listed as "similar".
+ * representatives, each at the cluster's capture time; the rest stay ready
+ * and are listed as "similar".
  *
  * A cluster is stored flat: every other member's duplicate_of_id points at the
  * representative, whose own is null. Clusters are single-linkage (a photo near
@@ -154,6 +155,17 @@ class PhotoClusterService
                 $member->duplicate_of_id = $target;
                 $member->saveQuietly();
             }
+        }
+
+        // The tile sits in the gallery at the cluster's capture time: the best
+        // copy may have lost its metadata (e.g. a re-saved original) while a
+        // smaller copy kept it.
+        $takenAt = $best->captured_at
+            ?? $members->pluck('captured_at')->filter()->min()
+            ?? $best->created_at;
+        if ($takenAt !== null && ! $best->taken_at?->eq($takenAt)) {
+            $best->taken_at = $takenAt;
+            $best->saveQuietly();
         }
     }
 
