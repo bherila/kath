@@ -256,6 +256,12 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
     let group: QueueItem[] = [];
     let groupBytes = 0;
     for (const item of candidates) {
+      // Don't make the files already hashed wait on a big one.
+      if (group.length > 0 && groupBytes + item.file.size > HASH_GROUP_BYTES) {
+        await enqueue(group);
+        group = [];
+        groupBytes = 0;
+      }
       shownProgress.current.set(item.id, 0);
       item.hash = await computeFileHash(item.file, (fraction) => patchProgress(item.id, fraction));
       group.push(item);

@@ -197,6 +197,19 @@ describe('UploadPanel', () => {
     expect(screen.getByText('long.mp4').closest('li')).toHaveTextContent('Checking…');
   });
 
+  it('uploads a few photos before hashing a large video picked with them', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.uploadFile.mockResolvedValue('uploaded');
+    mocked.computeFileHash.mockImplementation(async (file: File) =>
+      file.name === 'long.mp4' ? new Promise<string>(() => {}) : `hash-${file.name}`);
+
+    render(<UploadPanel limits={roomyLimits} onUploaded={jest.fn()} />);
+    const photos = Array.from({ length: 5 }, (_, i) => sized(`p${i}.jpg`, 'image/jpeg', 3 * 1024 ** 2));
+    choose([sized('long.mp4', 'video/mp4', 2 * 1024 ** 3), ...photos]);
+
+    await waitFor(() => expect(mocked.uploadFile).toHaveBeenCalledTimes(5));
+  });
+
   it('shows overall progress across the batch', async () => {
     mocked.findExistingHashes.mockResolvedValue(new Set(['hash-dup.jpg']));
     mocked.computeFileHash.mockImplementation(async (file: File) => `hash-${file.name}`);
