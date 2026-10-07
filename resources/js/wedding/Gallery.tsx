@@ -10,9 +10,11 @@ import { HlsVideoPlayer } from '@/wedding/HlsVideoPlayer';
 interface GalleryProps {
   /** Bumped by the parent to reload from the newest item. */
   refreshKey: number;
+  /** IANA zone of the wedding: capture times are labelled in local event time. */
+  eventTimeZone?: string;
 }
 
-export function Gallery({ refreshKey }: GalleryProps) {
+export function Gallery({ refreshKey, eventTimeZone }: GalleryProps) {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,6 +129,9 @@ export function Gallery({ refreshKey }: GalleryProps) {
           <DialogContent className="max-w-[calc(100%-1rem)] gap-3 p-3 sm:max-w-3xl">
             <DialogTitle className="text-base">
               {viewing.guest_name ? `Shared by ${viewing.guest_name}` : 'Shared by a guest'}
+              {viewing.captured_at !== null && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">{formatTaken(viewing.captured_at, eventTimeZone)}</span>
+              )}
             </DialogTitle>
             <DialogDescription className="sr-only">
               {viewing.kind === 'video' ? 'Video' : 'Photo'} from the wedding gallery
@@ -154,6 +159,21 @@ export function Gallery({ refreshKey }: GalleryProps) {
 
 interface ItemProps {
   item: GalleryItem;
+}
+
+/** When it was taken, as the event's local time (not the viewer's). */
+function formatTaken(iso: string, timeZone: string | undefined): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+  try {
+    return new Intl.DateTimeFormat(undefined, { ...options, timeZone }).format(date);
+  } catch {
+    // An unknown zone name: fall back to the viewer's.
+    return new Intl.DateTimeFormat(undefined, options).format(date);
+  }
 }
 
 function dimensionsLabel(item: GalleryItem): string {

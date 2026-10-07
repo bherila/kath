@@ -17,6 +17,7 @@ function photo(name: string, overrides: Partial<GalleryItem> = {}): GalleryItem 
     guest_name: name,
     mine: false,
     created_at: '2026-10-04T00:00:00Z',
+    captured_at: null,
     width: null,
     height: null,
     similar_count: 0,
@@ -89,5 +90,15 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByRole('button', { name: /Remove/ }));
 
     expect(await screen.findByLabelText(/Open photo from copy/)).toBeInTheDocument();
+  });
+
+  it('labels capture times in the event time zone, not the viewer\'s', async () => {
+    request.mockResolvedValue({ next_cursor: null, items: [photo('p', { captured_at: '2026-09-28T00:04:12+00:00' })] });
+
+    render(<Gallery refreshKey={0} eventTimeZone="America/Los_Angeles" />);
+    fireEvent.click(await screen.findByLabelText(/Open photo from p/));
+
+    // 00:04 UTC is 5:04 PM the previous day in Los Angeles.
+    expect(screen.getByRole('heading')).toHaveTextContent(/Sep 27.*5:04/);
   });
 });

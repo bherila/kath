@@ -75,9 +75,9 @@ class WeddingHlsTest extends WeddingTestCase
 
         $master = "/wedding/hls/{$video->ulid}/master.m3u8";
         $this->getJson('/wedding/api/gallery')
-            ->assertJsonPath('items.1.master_url', $master)
-            ->assertJsonPath('items.1.processing', true)
-            ->assertJsonPath('items.0.master_url', null);
+            ->assertJsonPath('items.0.master_url', $master)
+            ->assertJsonPath('items.0.processing', true)
+            ->assertJsonPath('items.1.master_url', null);
         $this->get($master)->assertNotFound();
         $this->get("/wedding/hls/{$photo->ulid}/master.m3u8")->assertNotFound();
 
@@ -89,7 +89,7 @@ class WeddingHlsTest extends WeddingTestCase
             ->assertOk()
             ->assertSee("/wedding/hls/{$video->ulid}/720/index.m3u8", false);
         $this->assertSame(self::CONTENT_ID, $video->refresh()->hls_content_id);
-        $this->getJson('/wedding/api/gallery')->assertJsonPath('items.1.processing', false);
+        $this->getJson('/wedding/api/gallery')->assertJsonPath('items.0.processing', false);
     }
 
     public function test_listing_the_gallery_does_no_storage_lookups(): void

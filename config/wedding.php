@@ -45,6 +45,10 @@ return [
         'video' => ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp', 'video/x-m4v'],
     ],
 
+    // Where the wedding happened. A photo whose camera recorded no time-zone
+    // offset is placed in the gallery's timeline as local time here.
+    'event_timezone' => env('WEDDING_EVENT_TIMEZONE', 'America/Los_Angeles'),
+
     // Daily byte quotas, reserved at presign time (each presigned PUT is bound
     // to its declared size). They can't be reset by re-entering an email: one
     // is global, the other per client IP — generous, since a whole venue may

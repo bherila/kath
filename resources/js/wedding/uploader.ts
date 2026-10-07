@@ -1,4 +1,5 @@
 import { ApiError, type MultipartInitResponse, requestJson, type SignedPartResponse, type StoreUploadResponse } from '@/wedding/api';
+import { readCaptureTime } from '@/wedding/captureTime';
 import {
   computeFileHash,
   generatePhotoDerivatives,
@@ -161,7 +162,7 @@ export async function uploadFile(
     }
   }
 
-  const derivatives = await buildDerivatives(file, kind);
+  const [derivatives, capturedAt] = await Promise.all([buildDerivatives(file, kind), readCaptureTime(file, kind)]);
 
   let created: StoreUploadResponse;
   try {
@@ -173,6 +174,7 @@ export async function uploadFile(
       perceptual_hashes: derivatives.perceptualHashes,
       width: derivatives.width,
       height: derivatives.height,
+      captured_at: capturedAt,
       display_size: derivatives.display?.size ?? null,
       thumbnail_size: derivatives.thumbnail?.size ?? null,
     });

@@ -5,6 +5,7 @@ namespace App\Services\Wedding;
 use App\Models\WeddingUpload;
 use App\Services\FileStorageService;
 use App\Support\WeddingGuest;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
@@ -92,6 +93,7 @@ class WeddingUploadService
     /**
      * @param  list<string>|null  $perceptualHashes  photos: blockhash per orientation
      * @param  array{width: int, height: int}|null  $dimensions  photos: decoded size
+     * @param  CarbonImmutable|null  $capturedAt  when it was taken, from its metadata
      * @return array{
      *     upload: WeddingUpload,
      *     upload_url: string,
@@ -109,6 +111,7 @@ class WeddingUploadService
         ?string $fileHash,
         ?array $perceptualHashes,
         ?array $dimensions,
+        ?CarbonImmutable $capturedAt,
         ?int $displayBytes,
         ?int $thumbnailBytes,
         string $clientIp,
@@ -151,6 +154,7 @@ class WeddingUploadService
             'perceptual_hashes' => $kind === WeddingUpload::KIND_PHOTO ? $perceptualHashes : null,
             'width' => $kind === WeddingUpload::KIND_PHOTO ? ($dimensions['width'] ?? null) : null,
             'height' => $kind === WeddingUpload::KIND_PHOTO ? ($dimensions['height'] ?? null) : null,
+            'captured_at' => $capturedAt,
         ];
 
         // Check and reserve under one lock so concurrent presigns can't both

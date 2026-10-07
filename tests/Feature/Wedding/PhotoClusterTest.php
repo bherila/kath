@@ -47,7 +47,7 @@ class PhotoClusterTest extends WeddingTestCase
      *
      * @param  list<string>  $hashes
      */
-    private function uploadPhoto(array $hashes, int $width, int $height, int $size = 2048): string
+    private function uploadPhoto(array $hashes, int $width, int $height, int $size = 2048, ?string $capturedAt = null): string
     {
         $ulid = $this->postJson('/wedding/api/uploads', [
             'filename' => 'IMG.JPG',
@@ -57,6 +57,7 @@ class PhotoClusterTest extends WeddingTestCase
             'perceptual_hashes' => $hashes,
             'width' => $width,
             'height' => $height,
+            'captured_at' => $capturedAt,
         ])->assertCreated()->json('ulid');
         Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $ulid)->sole()->object_key, str_repeat('x', $size));
         $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
@@ -82,6 +83,19 @@ class PhotoClusterTest extends WeddingTestCase
         $this->assertSame([$full], $this->galleryUlids());
         $this->getJson('/wedding/api/gallery')->assertJsonPath('items.0.similar_count', 1)->assertJsonPath('items.0.width', 4032);
         $this->assertSame([$small], array_column($this->getJson("/wedding/api/gallery/{$full}/similar")->assertOk()->json('items'), 'ulid'));
+    }
+
+    public function test_the_tile_keeps_a_capture_time_only_a_smaller_copy_knows(): void
+    {
+        $this->travelTo('2026-09-28 18:00:00');
+        $this->enterAs();
+        $other = $this->uploadPhoto($this->hashes(), 4032, 3024, capturedAt: '2026-09-27T23:30:00Z');
+        $hashes = $this->hashes();
+        $this->uploadPhoto($hashes, 1080, 810, capturedAt: '2026-09-27T23:00:00Z');
+        // The full-size copy arrives with its metadata stripped.
+        $best = $this->uploadPhoto($this->nearCopy($hashes), 4032, 3024);
+
+        $this->assertSame([$best, $other], $this->galleryUlids());
     }
 
     public function test_a_later_smaller_copy_joins_under_the_existing_best(): void
@@ -115,7 +129,7 @@ class PhotoClusterTest extends WeddingTestCase
         $a = $this->uploadPhoto($this->hashes(), 4032, 3024);
         $b = $this->uploadPhoto($this->hashes(), 4032, 3024);
 
-        $this->assertSame([$b, $a], $this->galleryUlids());
+        $this->assertSame([$a, $b], $this->galleryUlids());
     }
 
     public function test_a_photo_bridging_two_clusters_merges_them_under_the_best(): void
@@ -125,7 +139,7 @@ class PhotoClusterTest extends WeddingTestCase
         $right = $this->nearCopy($left, 16); // too far apart to match directly
         $a = $this->uploadPhoto($left, 1080, 810);
         $b = $this->uploadPhoto($right, 2048, 1536);
-        $this->assertSame([$b, $a], $this->galleryUlids());
+        $this->assertSame([$a, $b], $this->galleryUlids());
 
         $bridge = $this->uploadPhoto($this->nearCopy($left, 8), 4032, 3024); // 8 bits from each
 
@@ -198,7 +212,7 @@ class PhotoClusterTest extends WeddingTestCase
         Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $ulid)->sole()->object_key, str_repeat('x', 10));
         $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
 
-        $this->assertSame([$ulid, $hashed], $this->galleryUlids());
+        $this->assertSame([$hashed, $ulid], $this->galleryUlids());
     }
 
     public function test_releasing_a_copy_follows_a_representative_demoted_since(): void
@@ -231,6 +245,21 @@ class PhotoClusterTest extends WeddingTestCase
 
         $this->assertSame($best->id, $small->refresh()->duplicate_of_id);
         $this->assertNull($best->refresh()->duplicate_of_id);
+    }
+
+    public function test_rebuild_returns_a_split_off_photo_to_its_own_time(): void
+    {
+        // Was the best copy of a cluster and took a smaller copy's capture
+        // time; that copy no longer matches (e.g. a bridging photo is gone).
+        $former = $this->makeUpload([
+            'perceptual_hashes' => $this->hashes(),
+            'created_at' => '2026-09-28 18:00:00',
+            'taken_at' => '2026-09-27 23:00:00',
+        ]);
+
+        $this->artisan('wedding:recluster-photos')->assertSuccessful();
+
+        $this->assertSame('2026-09-28 18:00:00', $former->refresh()->taken_at?->toDateTimeString());
     }
 
     public function test_store_validates_hashes_and_dimensions(): void
