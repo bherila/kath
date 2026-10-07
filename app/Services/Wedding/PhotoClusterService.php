@@ -60,7 +60,11 @@ class PhotoClusterService
         }
 
         Cache::lock(self::LOCK, 30)->block(10, function () use ($photo): void {
-            $representative = $photo->duplicate_of_id ?? $photo->id;
+            // Read the pointer under the lock and follow it: a re-election that
+            // ran after this photo stopped being shown skipped it, so it can
+            // still point at a copy that has since been demoted.
+            $photo->refresh();
+            $representative = $this->currentRepresentative($photo->duplicate_of_id ?? $photo->id);
 
             $photo->duplicate_of_id = null;
             $photo->saveQuietly();
@@ -93,6 +97,20 @@ class PhotoClusterService
             ->each(fn (WeddingUpload $photo) => $this->place($photo->refresh()));
 
         return $this->readyPhotos()->whereNotNull('duplicate_of_id')->count();
+    }
+
+    private function currentRepresentative(int $id): int
+    {
+        // Clusters are flat, so this is at most a hop or two; bound it anyway.
+        for ($hops = 0; $hops < 10; $hops++) {
+            $next = WeddingUpload::query()->whereKey($id)->value('duplicate_of_id');
+            if ($next === null) {
+                break;
+            }
+            $id = (int) $next;
+        }
+
+        return $id;
     }
 
     /**

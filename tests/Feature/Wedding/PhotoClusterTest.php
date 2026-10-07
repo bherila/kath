@@ -3,6 +3,7 @@
 namespace Tests\Feature\Wedding;
 
 use App\Models\WeddingUpload;
+use App\Services\Wedding\PhotoClusterService;
 use App\Support\PerceptualHash;
 use Illuminate\Support\Facades\Storage;
 
@@ -198,6 +199,26 @@ class PhotoClusterTest extends WeddingTestCase
         $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
 
         $this->assertSame([$ulid, $hashed], $this->galleryUlids());
+    }
+
+    public function test_releasing_a_copy_follows_a_representative_demoted_since(): void
+    {
+        // A copy was hidden, then (before its release ran) a better upload
+        // re-elected the cluster without it: it still points at the old best.
+        $newBest = $this->makeUpload(['width' => 4032, 'height' => 3024]);
+        $oldBest = $this->makeUpload(['width' => 2048, 'height' => 1536, 'duplicate_of_id' => $newBest->id]);
+        $hidden = $this->makeUpload([
+            'width' => 1080,
+            'height' => 810,
+            'status' => WeddingUpload::STATUS_HIDDEN,
+            'duplicate_of_id' => $oldBest->id,
+        ]);
+
+        app(PhotoClusterService::class)->release($hidden);
+
+        $this->assertNull($newBest->refresh()->duplicate_of_id);
+        $this->assertSame($newBest->id, $oldBest->refresh()->duplicate_of_id);
+        $this->assertNull($hidden->refresh()->duplicate_of_id);
     }
 
     public function test_rebuild_recomputes_clusters_from_stored_hashes(): void
