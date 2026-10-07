@@ -11,9 +11,22 @@ import {
   uploadFile,
   type UploadLimits,
 } from '@/wedding/uploader';
+import { useScreenWakeLock, useTransferRate } from '@/wedding/uploadHooks';
 
 /** Files uploading at once; more just competes for a phone's uplink. */
 const CONCURRENCY = 2;
+
+/**
+ * A selection is hashed smallest file first and handed to the uploader in
+ * groups, so photos start uploading while a long video is still being hashed.
+ */
+const HASH_GROUP_FILES = 10;
+const HASH_GROUP_BYTES = 256 * 1024 * 1024;
+
+/** Progress changes smaller than this aren't worth a re-render. */
+const PROGRESS_STEP = 0.01;
+
+const MULTIPART_SESSION_PREFIX = 'wedding-multipart:';
 
 type ItemStatus = 'hashing' | 'queued' | 'uploading' | 'done' | 'duplicate' | 'failed' | 'unsupported';
 
@@ -35,9 +48,59 @@ interface UploadPanelProps {
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 3) {
-    return `${(bytes / 1024 ** 3).toFixed(0)} GB`;
+    return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
   }
   return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return 'less than a minute left';
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) {
+    return `about ${minutes} min left`;
+  }
+  return `about ${Math.round(minutes / 60)} hr left`;
+}
+
+/**
+ * Batch totals over the files that will actually upload (not duplicates or
+ * unsupported files): how many, and how many of their bytes have been sent.
+ */
+function transferTotals(items: QueueItem[]): { fileCount: number; totalBytes: number; sentBytes: number } {
+  let fileCount = 0;
+  let totalBytes = 0;
+  let sentBytes = 0;
+  for (const item of items) {
+    if (item.status === 'duplicate' || item.status === 'unsupported') {
+      continue;
+    }
+    fileCount += 1;
+    totalBytes += item.file.size;
+    if (item.status === 'done') {
+      sentBytes += item.file.size;
+    } else if (item.status === 'uploading') {
+      sentBytes += item.file.size * item.progress;
+    }
+  }
+  return { fileCount, totalBytes, sentBytes };
+}
+
+/** Large-video uploads saved for resuming (only hash-keyed ones can resume). */
+function countUnfinishedSessions(): number {
+  try {
+    let count = 0;
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(MULTIPART_SESSION_PREFIX) && !key.startsWith(`${MULTIPART_SESSION_PREFIX}unverified:`)) {
+        count += 1;
+      }
+    }
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
@@ -48,6 +111,13 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   const [dragging, setDragging] = useState(false);
 
   const active = items.some((item) => item.status === 'hashing' || item.status === 'queued' || item.status === 'uploading');
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  const [unfinished] = useState(countUnfinishedSessions);
+
+  useScreenWakeLock(active);
 
   useEffect(() => {
     if (!active) {
@@ -63,6 +133,17 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   const patch = useCallback((id: number, changes: Partial<QueueItem>) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...changes } : item)));
   }, []);
+
+  // XHR reports progress many times a second; with dozens of rows, only
+  // re-render when an item has moved a visible amount.
+  const shownProgress = useRef(new Map<number, number>());
+  const patchProgress = useCallback((id: number, fraction: number) => {
+    const shown = shownProgress.current.get(id) ?? 0;
+    if (fraction >= 1 || fraction < shown || fraction - shown >= PROGRESS_STEP) {
+      shownProgress.current.set(id, fraction);
+      patch(id, { progress: fraction });
+    }
+  }, [patch]);
 
   // One queue and one worker pool for the whole panel, so picking more files
   // (or retrying) while a batch is still uploading joins that batch instead of
@@ -92,13 +173,14 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
           pendingRef.current.delete(id);
           continue;
         }
+        shownProgress.current.set(id, 0);
         patch(id, { status: 'uploading', progress: 0, error: null });
         try {
           const outcome = await uploadFile(
             item.file,
             item.kind,
             item.hash,
-            (fraction) => patch(id, { progress: fraction }),
+            (fraction) => patchProgress(id, fraction),
             controller.signal,
           );
           patch(id, { status: outcome === 'duplicate' ? 'duplicate' : 'done', progress: 1 });
@@ -125,7 +207,7 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
       workersRef.current += 1;
       void worker();
     }
-  }, [onUploaded, patch]);
+  }, [onUploaded, patch, patchProgress]);
 
   const addFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {
@@ -147,34 +229,73 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
     });
     setItems((current) => [...added, ...current]);
 
-    // Hash one at a time: each read holds the whole file in memory.
-    const candidates = added.filter((item) => item.status === 'hashing');
-    for (const item of candidates) {
-      item.hash = await computeFileHash(item.file);
-    }
-
     // Skip anything already in the gallery, and repeats within this selection.
-    const existing = await findExistingHashes(candidates.flatMap((item) => (item.hash === null ? [] : [item.hash])));
     const seen = new Set<string>();
-    const queue: QueueItem[] = [];
-    for (const item of candidates) {
-      if (item.hash !== null && (existing.has(item.hash) || seen.has(item.hash))) {
-        patch(item.id, { status: 'duplicate', hash: item.hash });
-        continue;
+    const enqueue = async (group: QueueItem[]): Promise<void> => {
+      const existing = await findExistingHashes(group.flatMap((item) => (item.hash === null ? [] : [item.hash])));
+      const queue: QueueItem[] = [];
+      for (const item of group) {
+        if (item.hash !== null && (existing.has(item.hash) || seen.has(item.hash))) {
+          patch(item.id, { status: 'duplicate', hash: item.hash, progress: 0 });
+          continue;
+        }
+        if (item.hash !== null) {
+          seen.add(item.hash);
+        }
+        patch(item.id, { hash: item.hash, progress: 0 });
+        queue.push(item);
       }
-      if (item.hash !== null) {
-        seen.add(item.hash);
-      }
-      patch(item.id, { status: 'queued', hash: item.hash });
-      queue.push(item);
-    }
+      runUploads(queue);
+    };
 
-    runUploads(queue);
-  }, [limits, patch, runUploads]);
+    // Hash one file at a time (large ones stream in chunks), smallest first,
+    // handing each group over as soon as it's ready.
+    const candidates = added
+      .filter((item) => item.status === 'hashing')
+      .sort((a, b) => a.file.size - b.file.size);
+    let group: QueueItem[] = [];
+    let groupBytes = 0;
+    for (const item of candidates) {
+      shownProgress.current.set(item.id, 0);
+      item.hash = await computeFileHash(item.file, (fraction) => patchProgress(item.id, fraction));
+      group.push(item);
+      groupBytes += item.file.size;
+      if (group.length >= HASH_GROUP_FILES || groupBytes >= HASH_GROUP_BYTES) {
+        await enqueue(group);
+        group = [];
+        groupBytes = 0;
+      }
+    }
+    await enqueue(group);
+  }, [limits, patch, patchProgress, runUploads]);
 
   const retry = (item: QueueItem): void => {
     runUploads([item]);
   };
+
+  const retryAllFailed = useCallback((): void => {
+    const failed = itemsRef.current.filter((item) => item.status === 'failed' && item.kind !== null);
+    if (failed.length > 0) {
+      runUploads(failed);
+    }
+  }, [runUploads]);
+
+  // A phone that lost signal, or a tab the browser suspended in the
+  // background, fails its uploads; pick them back up (a large video resumes
+  // from its last finished part) as soon as the network or the page returns.
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') {
+        retryAllFailed();
+      }
+    };
+    window.addEventListener('online', retryAllFailed);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', retryAllFailed);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [retryAllFailed]);
 
   const onInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(event.target.files ?? []);
@@ -185,6 +306,10 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
 
   const doneCount = items.filter((item) => item.status === 'done').length;
   const duplicateCount = items.filter((item) => item.status === 'duplicate').length;
+  const failedCount = items.filter((item) => item.status === 'failed').length;
+  const totals = transferTotals(items);
+  const rate = useTransferRate(totals.sentBytes, active);
+  const secondsLeft = rate !== null && rate > 0 ? (totals.totalBytes - totals.sentBytes) / rate : null;
 
   return (
     <div
@@ -217,28 +342,55 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
         Select as many as you like from your camera roll. Anything already shared is skipped automatically.
       </p>
 
+      {unfinished > 0 && items.length === 0 && (
+        <p className="mt-3 rounded-md bg-muted p-3 text-sm">
+          {unfinished === 1 ? 'A large video' : `${unfinished} large videos`} didn&apos;t finish uploading last time. Choose{' '}
+          {unfinished === 1 ? 'it' : 'them'} again and the upload picks up where it left off.
+        </p>
+      )}
+
       {items.length > 0 && (
         <div className="mt-4">
           <p className="text-sm font-medium" aria-live="polite">
-            {active ? 'Uploading… keep this page open.' : 'All done — thank you!'}
+            {active ? 'Uploading… keep this page open and your screen on.' : failedCount > 0 ? 'Some uploads didn\u2019t finish.' : 'All done — thank you!'}
             {' '}
             <span className="text-muted-foreground font-normal">
-              {doneCount} shared{duplicateCount > 0 ? `, ${duplicateCount} already there` : ''}
+              {doneCount} of {totals.fileCount} shared{duplicateCount > 0 ? `, ${duplicateCount} already there` : ''}
             </span>
           </p>
+          {totals.totalBytes > 0 && (active || totals.sentBytes < totals.totalBytes) && (
+            <div className="mt-2">
+              <progress
+                className="h-2 w-full accent-primary"
+                max={totals.totalBytes}
+                value={totals.sentBytes}
+                aria-label="Overall upload progress"
+              />
+              <p className="text-xs text-muted-foreground">
+                {formatBytes(totals.sentBytes)} of {formatBytes(totals.totalBytes)}
+                {active && secondsLeft !== null ? ` · ${formatDuration(secondsLeft)}` : ''}
+              </p>
+            </div>
+          )}
+          {failedCount > 0 && !active && (
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={retryAllFailed}>
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Retry {failedCount === 1 ? 'the failed upload' : `all ${failedCount} failed`}
+            </Button>
+          )}
           <ul className="mt-2 max-h-80 space-y-1.5 overflow-y-auto">
             {items.map((item) => (
               <li key={item.id} className="flex items-center gap-3 rounded-md bg-muted/50 px-3 py-2 text-sm">
                 <StatusIcon status={item.status} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate">{item.file.name}</p>
-                  {item.status === 'uploading' && (
+                  {(item.status === 'uploading' || (item.status === 'hashing' && item.progress > 0)) && (
                     <progress className="mt-1 h-1.5 w-full accent-primary" max={1} value={item.progress} />
                   )}
                   <p className="text-xs text-muted-foreground">{statusLabel(item)}</p>
                 </div>
                 {item.status === 'failed' && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => retry(item)}>
+                  <Button type="button" variant="ghost" size="sm" aria-label={`Retry ${item.file.name}`} onClick={() => retry(item)}>
                     <RotateCcw className="size-4" aria-hidden="true" />
                     Retry
                   </Button>
@@ -255,7 +407,7 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
 function statusLabel(item: QueueItem): string {
   switch (item.status) {
     case 'hashing':
-      return 'Checking…';
+      return item.progress > 0 && item.progress < 1 ? `Checking… ${Math.round(item.progress * 100)}%` : 'Checking…';
     case 'queued':
       return 'Waiting…';
     case 'uploading':

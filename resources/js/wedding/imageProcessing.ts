@@ -9,6 +9,8 @@
  * perceptual (blockhash) hash for near-duplicate detection.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { bmvbhash } from 'blockhash-core';
 
 /** Longest-edge bound for the generated thumbnail/poster JPEG. */
@@ -44,26 +46,37 @@ export interface PhotoDerivatives {
 }
 
 /**
- * Upper bound on the file size we hash exactly in the browser. SHA-256 here
- * needs the whole file in memory (the Web Crypto digest can't stream), so large
- * videos (the cap is conservative for phones) skip the exact hash and fall back to the transcoder's content id
- * for duplicate detection.
+ * Files up to this size are hashed by Web Crypto in one read: fast, but it
+ * holds the whole file in memory (its digest can't stream). Larger files are
+ * hashed incrementally in HASH_CHUNK_BYTES slices, so a multi-gigabyte video
+ * never has to fit in a phone's memory.
  */
-const MAX_EXACT_HASH_BYTES = 256 * 1024 * 1024;
+const NATIVE_HASH_MAX_BYTES = 64 * 1024 * 1024;
+const HASH_CHUNK_BYTES = 8 * 1024 * 1024;
 
 /**
- * Compute a SHA-256 of the file's bytes as a lowercase hex string, used to
- * reject byte-identical re-uploads. Returns null when the browser lacks Web
- * Crypto, the file is too large to hash in memory, or hashing fails — callers
- * treat a null hash as "no exact-duplicate check available" and upload anyway.
+ * Compute a SHA-256 of the file's bytes as a lowercase hex string. It rejects
+ * byte-identical re-uploads before any bytes are sent, and identifies a large
+ * video's resumable upload session. Returns null if hashing fails; callers
+ * then upload without the exact-duplicate check.
  */
-export async function computeFileHash(file: File): Promise<string | null> {
-  if (file.size > MAX_EXACT_HASH_BYTES || typeof crypto === 'undefined' || crypto.subtle === undefined) {
-    return null;
-  }
+export async function computeFileHash(file: File, onProgress?: (fraction: number) => void): Promise<string | null> {
   try {
-    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    if (file.size <= NATIVE_HASH_MAX_BYTES && typeof crypto !== 'undefined' && crypto.subtle !== undefined) {
+      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      onProgress?.(1);
+      return bytesToHex(new Uint8Array(digest));
+    }
+
+    const hasher = sha256.create();
+    for (let offset = 0; offset < file.size; offset += HASH_CHUNK_BYTES) {
+      const chunk = new Uint8Array(await file.slice(offset, offset + HASH_CHUNK_BYTES).arrayBuffer());
+      hasher.update(chunk);
+      onProgress?.(Math.min(1, (offset + chunk.byteLength) / file.size));
+      // Yield between chunks so hashing a long video doesn't freeze the page.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return bytesToHex(hasher.digest());
   } catch {
     return null;
   }

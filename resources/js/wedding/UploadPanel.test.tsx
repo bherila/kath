@@ -22,6 +22,20 @@ const limits: uploader.UploadLimits = {
   video_types: ['video/mp4'],
 };
 
+const roomyLimits: uploader.UploadLimits = {
+  photo_bytes: 50 * 1024 ** 2,
+  video_bytes: 5 * 1024 ** 3,
+  photo_types: ['image/jpeg'],
+  video_types: ['video/mp4'],
+};
+
+/** A file reporting `size` bytes without allocating them (hashing is mocked). */
+function sized(name: string, type: string, size: number): File {
+  const file = new File(['x'], name, { type });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
+}
+
 function photo(name: string): File {
   return new File([name], name, { type: 'image/jpeg' });
 }
@@ -74,7 +88,7 @@ describe('UploadPanel', () => {
     choose([photo('a.jpg')]);
 
     expect(await screen.findByText('Upload failed: network error.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry a.jpg' }));
 
     await waitFor(() => expect(screen.getByText('Shared')).toBeInTheDocument());
     expect(onUploaded).toHaveBeenCalledTimes(1);
@@ -145,7 +159,7 @@ describe('UploadPanel', () => {
 
     render(<UploadPanel limits={limits} onUploaded={onUploaded} />);
     choose([photo('a.jpg')]);
-    const retryButton = await screen.findByRole('button', { name: /Retry/ });
+    const retryButton = await screen.findByRole('button', { name: 'Retry a.jpg' });
 
     // Occupy both upload slots, then press Retry twice before React re-renders.
     choose([photo('b.jpg'), photo('c.jpg')]);
@@ -154,7 +168,7 @@ describe('UploadPanel', () => {
       retryButton.click();
       retryButton.click();
     });
-    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry a.jpg' })).not.toBeInTheDocument();
 
     // Finish uploads as they start (b, c, then the retried a) until the pool drains.
     while (onUploaded.mock.calls.length === 0) {
@@ -165,5 +179,75 @@ describe('UploadPanel', () => {
 
     const attemptsForA = mocked.uploadFile.mock.calls.filter(([file]) => file.name === 'a.jpg');
     expect(attemptsForA).toHaveLength(2);
+  });
+
+  it('hashes smallest first and starts uploading before a long video is hashed', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.uploadFile.mockResolvedValue('uploaded');
+    mocked.computeFileHash.mockImplementation(async (file: File) =>
+      file.name === 'long.mp4' ? new Promise<string>(() => {}) : `hash-${file.name}`);
+
+    render(<UploadPanel limits={roomyLimits} onUploaded={jest.fn()} />);
+    const photos = Array.from({ length: 10 }, (_, i) => sized(`p${i}.jpg`, 'image/jpeg', (10 - i) * 1024 ** 2));
+    choose([sized('long.mp4', 'video/mp4', 2 * 1024 ** 3), ...photos]);
+
+    // The first group of ten photos uploads while the video is still hashing.
+    await waitFor(() => expect(mocked.uploadFile).toHaveBeenCalledTimes(10));
+    expect(mocked.uploadFile.mock.calls.map(([file]) => file.name).slice(0, 2)).toEqual(['p9.jpg', 'p8.jpg']);
+    expect(screen.getByText('long.mp4').closest('li')).toHaveTextContent('Checking…');
+  });
+
+  it('shows overall progress across the batch', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set(['hash-dup.jpg']));
+    mocked.computeFileHash.mockImplementation(async (file: File) => `hash-${file.name}`);
+    let report: (fraction: number) => void = () => {};
+    mocked.uploadFile.mockImplementation(async (file, _kind, _hash, onProgress) => {
+      if (file.name === 'clip.mp4') {
+        report = onProgress;
+        return new Promise(() => {});
+      }
+      return 'uploaded';
+    });
+
+    render(<UploadPanel limits={roomyLimits} onUploaded={jest.fn()} />);
+    choose([
+      sized('a.jpg', 'image/jpeg', 100 * 1024 ** 2 / 4),
+      sized('dup.jpg', 'image/jpeg', 5 * 1024 ** 2),
+      sized('clip.mp4', 'video/mp4', 1024 ** 3),
+    ]);
+    await waitFor(() => expect(screen.getByText(/1 of 2 shared, 1 already there/)).toBeInTheDocument());
+    act(() => report(0.5));
+
+    // 25 MB done + half of 1 GB, out of 25 MB + 1 GB (the duplicate doesn't count).
+    expect(screen.getByText((_, element) => element?.tagName === 'P' && element.textContent === '537 MB of 1.0 GB')).toBeInTheDocument();
+    expect(screen.getByLabelText('Overall upload progress')).toHaveAttribute('max', String(1024 ** 3 + 25 * 1024 ** 2));
+  });
+
+  it('retries failed uploads when the network comes back', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.uploadFile.mockRejectedValueOnce(new Error('Upload failed: network error.')).mockResolvedValueOnce('uploaded');
+    const onUploaded = jest.fn();
+
+    render(<UploadPanel limits={limits} onUploaded={onUploaded} />);
+    choose([photo('a.jpg')]);
+    expect(await screen.findByRole('button', { name: 'Retry the failed upload' })).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1));
+    expect(mocked.uploadFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells the guest about a large upload they can resume', () => {
+    window.localStorage.setItem('wedding-multipart:abc', '{}');
+    window.localStorage.setItem('wedding-multipart:unverified:xyz', '{}');
+    try {
+      render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+      expect(screen.getByText(/A large video didn.t finish uploading last time/)).toBeInTheDocument();
+    } finally {
+      window.localStorage.clear();
+    }
   });
 });

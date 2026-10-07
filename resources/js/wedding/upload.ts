@@ -46,7 +46,13 @@ interface UploadMultipartFileOptions {
   signal?: AbortSignal;
 }
 
-const MAX_PART_RETRIES = 3;
+/**
+ * Attempts per request. With the backoff below a request rides out roughly a
+ * minute of trouble (a phone hopping from Wi-Fi to cellular), and time spent
+ * offline doesn't count.
+ */
+const MAX_ATTEMPTS = 6;
+const MAX_BACKOFF_MS = 20_000;
 
 export function putToSignedUrl(
   url: string,
@@ -235,9 +241,14 @@ function reportMultipartProgress(
   onProgress(Math.min(1, (completedBytes + activePartLoadedBytes) / file.size));
 }
 
-async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+/**
+ * Run a request, retrying failures with exponential backoff (1s, 2s, 4s, …).
+ * While the browser reports itself offline, wait for it to reconnect before
+ * the next attempt instead of burning attempts on a dead network.
+ */
+export async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_PART_RETRIES; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     if (signal?.aborted) {
       throw new DOMException('Upload canceled.', 'AbortError');
     }
@@ -250,13 +261,35 @@ async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal)
       }
 
       lastError = err;
-      if (attempt < MAX_PART_RETRIES) {
-        await delay(500 * attempt, signal);
+      if (attempt < MAX_ATTEMPTS) {
+        await delay(Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS), signal);
+        await waitUntilOnline(signal);
       }
     }
   }
 
   throw lastError instanceof Error ? lastError : new Error('Upload failed.');
+}
+
+function waitUntilOnline(signal?: AbortSignal): Promise<void> {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const done = (): void => {
+      window.removeEventListener('online', done);
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    };
+    const abort = (): void => {
+      window.removeEventListener('online', done);
+      reject(new DOMException('Upload canceled.', 'AbortError'));
+    };
+
+    window.addEventListener('online', done);
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

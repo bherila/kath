@@ -13,6 +13,7 @@ import {
   removeMultipartSession,
   saveMultipartSession,
   uploadMultipartFile,
+  withRetries,
 } from '@/wedding/upload';
 
 export type FileKind = 'photo' | 'video';
@@ -111,9 +112,9 @@ async function buildDerivatives(file: File, kind: FileKind): Promise<Derivatives
 /**
  * localStorage key for a large video's multipart session. Only a content hash
  * may identify a resumable session: name/size/mtime can match a different
- * video, and resuming it would splice two files into one object. Unhashed
- * files (over the in-browser hash cap) get a one-off key that is never
- * looked up again, so they always start a fresh session.
+ * video, and resuming it would splice two files into one object. Every file is
+ * hashed (large ones in chunks), so this only falls back to a one-off key —
+ * never looked up again, always a fresh session — if hashing failed.
  */
 function multipartSessionKey(fileHash: string | null): { key: string; resumable: boolean } {
   if (fileHash !== null) {
@@ -190,8 +191,10 @@ export async function uploadFile(
     return 'uploaded';
   }
 
-  await putToSignedUrl(created.upload_url, file, created.upload_headers, onProgress, { signal });
-  await requestJson('POST', `/wedding/api/uploads/${created.ulid}/complete`, {});
+  // Transient failures (a dropped connection, a network switch) are retried
+  // with backoff; completing is idempotent on the server.
+  await withRetries(() => putToSignedUrl(created.upload_url, file, created.upload_headers, onProgress, { signal }), signal);
+  await withRetries(() => requestJson('POST', `/wedding/api/uploads/${created.ulid}/complete`, {}), signal);
   return 'uploaded';
 }
 
