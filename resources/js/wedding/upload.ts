@@ -1,3 +1,5 @@
+import { ApiError } from '@/wedding/api';
+
 /**
  * PUT a file to a presigned URL using XHR so we can report progress (the fetch
  * API does not expose upload progress). The headers must be exactly those the
@@ -195,7 +197,7 @@ function putBlobToSignedUrl(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve({ etag: xhr.getResponseHeader('ETag') });
       } else {
-        reject(new Error(`Upload failed (HTTP ${xhr.status}).`));
+        reject(new ApiError(xhr.status, `Upload failed (HTTP ${xhr.status}).`));
       }
     };
 
@@ -242,9 +244,11 @@ function reportMultipartProgress(
 }
 
 /**
- * Run a request, retrying failures with exponential backoff (1s, 2s, 4s, …).
- * While the browser reports itself offline, wait for it to reconnect before
- * the next attempt instead of burning attempts on a dead network.
+ * Run a request, retrying transient failures with exponential backoff (1s,
+ * 2s, 4s, …). While the browser reports itself offline, wait for it to
+ * reconnect before the next attempt instead of burning attempts on a dead
+ * network. A definitive answer (e.g. 404 for an expired upload session) is
+ * thrown at once, so callers can recover from it without waiting.
  */
 export async function withRetries<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   let lastError: unknown;
@@ -261,6 +265,9 @@ export async function withRetries<T>(operation: () => Promise<T>, signal?: Abort
       }
 
       lastError = err;
+      if (!isTransient(err)) {
+        throw err;
+      }
       if (attempt < MAX_ATTEMPTS) {
         await delay(Math.min(1000 * 2 ** (attempt - 1), MAX_BACKOFF_MS), signal);
         await waitUntilOnline(signal);
@@ -269,6 +276,11 @@ export async function withRetries<T>(operation: () => Promise<T>, signal?: Abort
   }
 
   throw lastError instanceof Error ? lastError : new Error('Upload failed.');
+}
+
+/** Network failures, server errors, timeouts and rate limits are worth retrying. */
+function isTransient(err: unknown): boolean {
+  return !(err instanceof ApiError) || err.status >= 500 || err.status === 408 || err.status === 429;
 }
 
 function waitUntilOnline(signal?: AbortSignal): Promise<void> {

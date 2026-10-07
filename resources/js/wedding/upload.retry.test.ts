@@ -1,3 +1,4 @@
+import { ApiError } from '@/wedding/api';
 import { withRetries } from '@/wedding/upload';
 
 describe('withRetries', () => {
@@ -41,5 +42,17 @@ describe('withRetries', () => {
     await jest.advanceTimersByTimeAsync(60_000);
     await settled;
     expect(operation).toHaveBeenCalledTimes(6);
+  });
+
+  it('throws a definitive answer at once but retries server errors', async () => {
+    const gone = jest.fn<Promise<string>, []>().mockRejectedValue(new ApiError(404, 'Not found.'));
+    await expect(withRetries(gone)).rejects.toThrow('Not found.');
+    expect(gone).toHaveBeenCalledTimes(1);
+
+    const flaky = jest.fn<Promise<string>, []>().mockRejectedValueOnce(new ApiError(503, 'Unavailable.')).mockResolvedValue('ok');
+    const result = withRetries(flaky);
+    await jest.advanceTimersByTimeAsync(1_000);
+    await expect(result).resolves.toBe('ok');
+    expect(flaky).toHaveBeenCalledTimes(2);
   });
 });
