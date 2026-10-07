@@ -96,4 +96,12 @@ describe('capture time', () => {
     const digitized = jpegWithTags({ 0x9004: '2026:09:27 17:04:12', 0x9010: '+09:00', 0x9012: '-07:00' });
     await expect(readCaptureTime(digitized, 'photo')).resolves.toBe('2026-09-28T00:04:12.000Z');
   });
+
+  it('falls back to the next source when the preferred one is implausible', async () => {
+    const resetOriginal = jpegWithTags({ 0x9003: '1970:01:01 00:00:00', 0x9004: '2026:09:27 17:04:12', 0x9012: '-07:00' });
+    await expect(readCaptureTime(resetOriginal, 'photo')).resolves.toBe('2026-09-28T00:04:12.000Z');
+
+    const header = Date.UTC(2026, 8, 27, 23, 30) / 1000;
+    await expect(readCaptureTime(movie(header, '2099-01-01T00:00:00-0700'), 'video')).resolves.toBe('2026-09-27T23:30:00.000Z');
+  });
 });

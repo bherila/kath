@@ -28,8 +28,10 @@ const APPLE_CREATION_DATE_KEY = 'com.apple.quicktime.creationdate';
 /** Capture time as an ISO 8601 UTC instant, or null when unknown. */
 export async function readCaptureTime(file: File, kind: FileKind): Promise<string | null> {
   try {
-    const date = kind === 'photo' ? await readPhotoCaptureTime(file) : await readVideoCaptureTime(file);
-    return date !== null && isPlausible(date) ? date.toISOString() : null;
+    // Candidates in order of preference; a reset or future clock in one
+    // source falls through to the next.
+    const candidates = kind === 'photo' ? await readPhotoCaptureTimes(file) : await readVideoCaptureTimes(file);
+    return candidates.find(isPlausible)?.toISOString() ?? null;
   } catch {
     return null;
   }
@@ -49,7 +51,7 @@ const EXIF_TAGS = {
   OffsetTimeDigitized: 0x9012,
 } as const;
 
-async function readPhotoCaptureTime(file: File): Promise<Date | null> {
+async function readPhotoCaptureTimes(file: File): Promise<Date[]> {
   const { default: exifr } = await import('exifr/dist/lite.esm.mjs');
   const tags = (await exifr.parse(file, {
     // The capture date lives in the Exif IFD (reached through IFD0, which
@@ -62,18 +64,18 @@ async function readPhotoCaptureTime(file: File): Promise<Date | null> {
     reviveValues: false,
   })) as Record<number, unknown> | undefined;
   if (tags === undefined) {
-    return null;
+    return [];
   }
 
   const text = (tag: number): string | null => (typeof tags[tag] === 'string' ? tags[tag] : null);
   // Each date has its own offset tag (EXIF 2.31); OffsetTime belongs to the
   // modification date, which may be from an edit made in another time zone.
   const original = text(EXIF_TAGS.DateTimeOriginal);
-  if (original !== null) {
-    return parseExifDate(original, text(EXIF_TAGS.OffsetTimeOriginal));
-  }
   const digitized = text(EXIF_TAGS.CreateDate);
-  return digitized === null ? null : parseExifDate(digitized, text(EXIF_TAGS.OffsetTimeDigitized));
+  return [
+    original === null ? null : parseExifDate(original, text(EXIF_TAGS.OffsetTimeOriginal)),
+    digitized === null ? null : parseExifDate(digitized, text(EXIF_TAGS.OffsetTimeDigitized)),
+  ].filter((date): date is Date => date !== null);
 }
 
 /**
@@ -93,9 +95,9 @@ export function parseExifDate(value: string, offset: string | null): Date | null
   return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
 }
 
-async function readVideoCaptureTime(file: File): Promise<Date | null> {
+async function readVideoCaptureTimes(file: File): Promise<Date[]> {
   const moov = await readTopLevelBox(file, 'moov');
-  return moov === null ? null : parseMoovCaptureTime(moov);
+  return moov === null ? [] : parseMoovCaptureTimes(moov);
 }
 
 /** Find a top-level box by walking box headers (moov can sit after mdat). */
@@ -129,8 +131,8 @@ async function readTopLevelBox(file: File, wanted: string): Promise<DataView | n
   return null;
 }
 
-/** Capture time from a moov box's payload. */
-export function parseMoovCaptureTime(moov: DataView): Date | null {
+/** Capture time candidates from a moov box's payload, preferred first. */
+export function parseMoovCaptureTimes(moov: DataView): Date[] {
   let headerTime: Date | null = null;
   let appleTime: Date | null = null;
 
@@ -147,7 +149,7 @@ export function parseMoovCaptureTime(moov: DataView): Date | null {
       }
     }
   }
-  return appleTime ?? headerTime;
+  return [appleTime, headerTime].filter((date): date is Date => date !== null);
 }
 
 function parseMvhd(view: DataView, start: number, end: number): Date | null {
