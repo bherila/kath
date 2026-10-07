@@ -79,6 +79,11 @@ export interface GalleryItem {
   guest_name: string | null;
   mine: boolean;
   created_at: string;
+  /** Photos: decoded pixel size, when the uploader's browser could decode it. */
+  width: number | null;
+  height: number | null;
+  /** Near-identical copies collapsed under this (the best) one. */
+  similar_count: number;
   thumb_url: string | null;
   display_url: string | null;
   original_url: string;
@@ -86,6 +91,10 @@ export interface GalleryItem {
   master_url: string | null;
   /** Videos not yet known to be transcoded, as of the last check. */
   processing: boolean;
+}
+
+export interface SimilarList {
+  items: GalleryItem[];
 }
 
 export interface GalleryPage {

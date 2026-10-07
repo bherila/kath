@@ -87,11 +87,13 @@ export { computeFileHash };
 interface Derivatives {
   display: Blob | null;
   thumbnail: Blob | null;
-  perceptualHash: string | null;
+  perceptualHashes: string[] | null;
+  width: number | null;
+  height: number | null;
 }
 
 async function buildDerivatives(file: File, kind: FileKind): Promise<Derivatives> {
-  const none: Derivatives = { display: null, thumbnail: null, perceptualHash: null };
+  const none: Derivatives = { display: null, thumbnail: null, perceptualHashes: null, width: null, height: null };
   if (!supportsClientDerivatives()) {
     return none;
   }
@@ -167,7 +169,9 @@ export async function uploadFile(
       content_type: contentType,
       size: file.size,
       file_hash: fileHash,
-      perceptual_hash: derivatives.perceptualHash,
+      perceptual_hashes: derivatives.perceptualHashes,
+      width: derivatives.width,
+      height: derivatives.height,
       display_size: derivatives.display?.size ?? null,
       thumbnail_size: derivatives.thumbnail?.size ?? null,
     });

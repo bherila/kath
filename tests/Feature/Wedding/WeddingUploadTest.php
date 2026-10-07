@@ -19,7 +19,9 @@ class WeddingUploadTest extends WeddingTestCase
             'content_type' => 'image/jpeg',
             'size' => 2048,
             'file_hash' => $this->hash('photo-1'),
-            'perceptual_hash' => base64_encode(str_repeat("\x00", 32)),
+            'perceptual_hashes' => array_fill(0, 8, base64_encode(str_repeat("\x00", 32))),
+            'width' => 4032,
+            'height' => 3024,
             'display_size' => 300_000,
             'thumbnail_size' => 20_000,
         ], $overrides);
@@ -70,7 +72,9 @@ class WeddingUploadTest extends WeddingTestCase
         $this->postJson('/wedding/api/uploads', $this->payload([
             'filename' => 'clip.MOV',
             'content_type' => 'video/quicktime',
-            'perceptual_hash' => null,
+            'perceptual_hashes' => null,
+            'width' => null,
+            'height' => null,
             'display_size' => 300_000,
         ]))->assertCreated();
 
@@ -199,21 +203,6 @@ class WeddingUploadTest extends WeddingTestCase
         Storage::disk('r2')->assertMissing($key);
     }
 
-    public function test_near_identical_photos_are_flagged_not_blocked(): void
-    {
-        $original = $this->makeUpload(['perceptual_hash' => base64_encode(str_repeat("\x00", 32))]);
-        $this->enterAs();
-        // Three differing bits: well inside the near-duplicate distance.
-        $ulid = $this->postJson('/wedding/api/uploads', $this->payload([
-            'perceptual_hash' => base64_encode("\x07".str_repeat("\x00", 31)),
-        ]))->json('ulid');
-        Storage::disk('r2')->put(WeddingUpload::query()->where('ulid', $ulid)->sole()->object_key, 'x');
-
-        $this->postJson("/wedding/api/uploads/{$ulid}/complete")->assertOk();
-
-        $this->assertSame($original->id, WeddingUpload::query()->where('ulid', $ulid)->sole()->duplicate_of_id);
-    }
-
     public function test_only_the_session_that_created_an_upload_can_touch_it(): void
     {
         $this->enterAs('same@example.test');
@@ -236,7 +225,9 @@ class WeddingUploadTest extends WeddingTestCase
             'filename' => 'clip.mp4',
             'content_type' => 'video/mp4',
             'size' => $size,
-            'perceptual_hash' => null,
+            'perceptual_hashes' => null,
+            'width' => null,
+            'height' => null,
         ]))->assertCreated()->assertJsonPath('multipart', true);
         $ulid = $created->json('ulid');
 

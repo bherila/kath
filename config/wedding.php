@@ -70,7 +70,9 @@ return [
         'max_parts' => 10_000,
     ],
 
-    // Near-duplicate photo flag: Hamming distance over the 256-bit blockhash.
+    // Near-identical photos (Hamming distance over the 256-bit blockhash, at
+    // the best-matching orientation) are collapsed to their best copy.
+    // Run `wedding:recluster-photos` after changing it.
     'perceptual_duplicate_distance' => 10,
 
     'gallery_page_size' => 30,

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,14 +28,19 @@ use Illuminate\Support\Carbon;
  * @property ?int $size_bytes
  * @property ?int $expected_size_bytes
  * @property ?string $file_hash
- * @property ?string $perceptual_hash
- * @property ?int $duplicate_of_id
+ * @property ?list<string> $perceptual_hashes
+ * @property ?int $width
+ * @property ?int $height
+ * @property ?int $duplicate_of_id For a photo: the best copy of its near-identical
+ *                                 cluster, which the gallery shows instead. For a
+ *                                 hidden video: the earlier byte-identical copy.
  * @property ?string $multipart_upload_id
  * @property ?int $multipart_part_size_bytes
  * @property ?int $multipart_max_part_number
  * @property ?string $hls_content_id
  * @property ?Carbon $hls_checked_at
  * @property Carbon $created_at
+ * @property-read ?int $similar_count
  */
 class WeddingUpload extends Model
 {
@@ -68,7 +74,9 @@ class WeddingUpload extends Model
         'size_bytes',
         'expected_size_bytes',
         'file_hash',
-        'perceptual_hash',
+        'perceptual_hashes',
+        'width',
+        'height',
     ];
 
     protected $hidden = [
@@ -82,6 +90,9 @@ class WeddingUpload extends Model
     {
         return [
             'size_bytes' => 'integer',
+            'width' => 'integer',
+            'height' => 'integer',
+            'perceptual_hashes' => 'array',
             'expected_size_bytes' => 'integer',
             'reserved_bytes' => 'integer',
             'multipart_part_size_bytes' => 'integer',
@@ -101,6 +112,25 @@ class WeddingUpload extends Model
     public function duplicateOf(): BelongsTo
     {
         return $this->belongsTo(self::class, 'duplicate_of_id');
+    }
+
+    /**
+     * Ready photos this one represents: near-identical copies collapsed under
+     * it because it is the best (highest-resolution) of them.
+     *
+     * @return HasMany<WeddingUpload, $this>
+     */
+    public function similar(): HasMany
+    {
+        return $this->hasMany(self::class, 'duplicate_of_id')->where('status', self::STATUS_READY);
+    }
+
+    /**
+     * Pixel count, or 0 when the dimensions are unknown.
+     */
+    public function pixels(): int
+    {
+        return ($this->width ?? 0) * ($this->height ?? 0);
     }
 
     /**
