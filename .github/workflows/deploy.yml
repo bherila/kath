@@ -71,7 +71,15 @@ jobs:
 
       - name: Deploy with rsync
         run: |
+          # Excluded paths are also protected from --delete: the server's
+          # sessions (the file driver), cache (locks, rate limits), logs and
+          # local files must survive a deploy, or every guest is signed out
+          # and loses their in-progress uploads.
           rsync -av --delete --exclude='.env' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/cache/*' \
+            --exclude='storage/logs/*' \
+            --exclude='storage/app/*' \
             -e "ssh -o StrictHostKeyChecking=yes" \
             app \
             bootstrap \
