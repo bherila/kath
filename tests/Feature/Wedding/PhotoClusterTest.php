@@ -159,6 +159,21 @@ class PhotoClusterTest extends WeddingTestCase
         $this->getJson('/wedding/api/gallery')->assertJsonPath('items.0.similar_count', 0);
     }
 
+    public function test_a_retried_completion_places_a_photo_left_unclustered(): void
+    {
+        $this->enterAs();
+        $hashes = $this->hashes();
+        $best = $this->uploadPhoto($hashes, 4032, 3024);
+        $small = $this->uploadPhoto($this->nearCopy($hashes), 1080, 810);
+        // As if the first completion died after marking it ready.
+        WeddingUpload::query()->where('ulid', $small)->update(['duplicate_of_id' => null]);
+        $this->assertCount(2, $this->galleryUlids());
+
+        $this->postJson("/wedding/api/uploads/{$small}/complete")->assertOk();
+
+        $this->assertSame([$best], $this->galleryUlids());
+    }
+
     public function test_similar_is_only_listed_for_a_shown_photo(): void
     {
         $this->enterAs();

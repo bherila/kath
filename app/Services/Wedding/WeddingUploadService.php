@@ -215,6 +215,10 @@ class WeddingUploadService
     public function completeUpload(WeddingUpload $upload): bool
     {
         if ($upload->isReady()) {
+            // A retried completion re-runs cluster placement (idempotent), in
+            // case the first request died between marking ready and placing.
+            $this->clusters->place($upload);
+
             return true;
         }
 
