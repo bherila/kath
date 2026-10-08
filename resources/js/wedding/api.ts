@@ -122,12 +122,18 @@ export function reportClientEvent(event: ClientEvent, detail: ClientEventDetail 
   requestJson('POST', '/wedding/api/client-events', { event, ...detail }).catch(() => {});
 }
 
-/** The metadata reportClientEvent sends about a file. */
+/** Extensions worth reporting; anything else could be part of a name. */
+const MEDIA_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'avif', 'dng', 'tif', 'tiff', 'bmp', 'raw', 'cr2', 'nef', 'arw',
+  'mp4', 'm4v', 'mov', 'webm', '3gp', 'avi', 'mkv', 'hevc', 'pdf', 'zip',
+]);
+
+/** The metadata reportClientEvent sends about a file (no part of its name). */
 export function describeFile(file: File): { type: string; ext: string; size: number } {
-  const dot = file.name.lastIndexOf('.');
+  const ext = file.name.includes('.') ? (file.name.split('.').pop() ?? '').toLowerCase() : '';
   return {
     type: file.type.slice(0, 100),
-    ext: dot >= 0 ? file.name.slice(dot + 1, dot + 11).toLowerCase() : '',
+    ext: MEDIA_EXTENSIONS.has(ext) ? ext : '',
     size: file.size,
   };
 }
