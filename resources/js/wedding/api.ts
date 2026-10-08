@@ -103,3 +103,31 @@ export interface GalleryPage {
   items: GalleryItem[];
   next_cursor: string | null;
 }
+
+export type ClientEvent = 'picker_change' | 'picker_empty' | 'file_rejected' | 'upload_failed' | 'uploader_error';
+
+export interface ClientEventDetail {
+  reason?: string;
+  message?: string;
+  count?: number;
+  /** File metadata only: never names or contents. */
+  files?: Array<{ type: string; ext: string; size: number }>;
+}
+
+/**
+ * Tell the server about a problem only this browser can see (best-effort,
+ * fire-and-forget): client-side failures otherwise leave no trace.
+ */
+export function reportClientEvent(event: ClientEvent, detail: ClientEventDetail = {}): void {
+  requestJson('POST', '/wedding/api/client-events', { event, ...detail }).catch(() => {});
+}
+
+/** The metadata reportClientEvent sends about a file. */
+export function describeFile(file: File): { type: string; ext: string; size: number } {
+  const dot = file.name.lastIndexOf('.');
+  return {
+    type: file.type.slice(0, 100),
+    ext: dot >= 0 ? file.name.slice(dot + 1, dot + 11).toLowerCase() : '',
+    size: file.size,
+  };
+}
