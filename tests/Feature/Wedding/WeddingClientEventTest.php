@@ -51,4 +51,19 @@ class WeddingClientEventTest extends WeddingTestCase
         }
         $this->postJson('/wedding/api/client-events', ['event' => 'picker_change'])->assertTooManyRequests();
     }
+
+    public function test_fresh_sessions_share_an_ip_ceiling(): void
+    {
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('info');
+
+        foreach (range(1, 3) as $guest) {
+            $this->switchGuest("guest{$guest}@example.test");
+            foreach (range(1, 40) as $_) {
+                $this->postJson('/wedding/api/client-events', ['event' => 'picker_change'])->assertNoContent();
+            }
+        }
+        $this->switchGuest('guest4@example.test');
+        $this->postJson('/wedding/api/client-events', ['event' => 'picker_change'])->assertTooManyRequests();
+    }
 }

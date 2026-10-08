@@ -52,11 +52,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(600)->by('wedding-uploads|'.($guest?->tokenHash() ?? $request->ip()));
         });
 
-        // Browser diagnostics: plenty for a big batch, not a log flood.
-        RateLimiter::for('wedding-client-events', function (Request $request): Limit {
+        // Browser diagnostics: plenty for a big batch, not a log flood. The
+        // IP ceiling matters because guest sessions are free to mint.
+        RateLimiter::for('wedding-client-events', function (Request $request): array {
             $guest = WeddingGuest::fromSession($request->session());
 
-            return Limit::perMinute(60)->by('wedding-client-events|'.($guest?->tokenHash() ?? $request->ip()));
+            return [
+                Limit::perMinute(60)->by('wedding-client-events|guest|'.($guest?->tokenHash() ?? $request->ip())),
+                Limit::perMinute(120)->by('wedding-client-events|ip|'.$request->ip()),
+            ];
         });
     }
 }
