@@ -123,6 +123,14 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   // Set while the native picker is open, so its closing without delivering
   // any files (a cancel, or an OS hand-off that failed) can be noticed.
   const pickerOpen = useRef(false);
+  const pickerTimer = useRef<number | undefined>(undefined);
+  // The picker finished (or is reopening): a pending "nothing came back"
+  // check belongs to the old invocation.
+  const settlePicker = useCallback((open: boolean): void => {
+    window.clearTimeout(pickerTimer.current);
+    pickerTimer.current = undefined;
+    pickerOpen.current = open;
+  }, []);
   const [dragging, setDragging] = useState(false);
 
   const active = items.some((item) => item.status === 'hashing' || item.status === 'queued' || item.status === 'uploading');
@@ -327,13 +335,13 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   }, [retryAllFailed]);
 
   const pickerReturnedNothing = useCallback((reason: string): void => {
-    pickerOpen.current = false;
+    settlePicker(false);
     setPickerNotice(PICKER_EMPTY_NOTICE);
     reportClientEvent('picker_empty', { reason });
-  }, []);
+  }, [settlePicker]);
 
   const onInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    pickerOpen.current = false;
+    settlePicker(false);
     const files = Array.from(event.target.files ?? []);
     // Reset so selecting the same files again still fires a change event.
     event.target.value = '';
@@ -362,13 +370,12 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
         pickerReturnedNothing('cancel');
       }
     };
-    let timer: number | undefined;
     const onFocus = (): void => {
       if (!pickerOpen.current) {
         return;
       }
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
+      window.clearTimeout(pickerTimer.current);
+      pickerTimer.current = window.setTimeout(() => {
         if (pickerOpen.current) {
           pickerReturnedNothing('no_change');
         }
@@ -379,7 +386,7 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
     return () => {
       input.removeEventListener('cancel', onCancel);
       window.removeEventListener('focus', onFocus);
-      window.clearTimeout(timer);
+      window.clearTimeout(pickerTimer.current);
     };
   }, [pickerReturnedNothing]);
 
@@ -415,9 +422,7 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
           accept="image/*,video/*"
           className="sr-only"
           aria-label="Choose photos and videos"
-          onClick={() => {
-            pickerOpen.current = true;
-          }}
+          onClick={() => settlePicker(true)}
           onChange={onInputChange}
         />
         <ImagePlus className="size-5" aria-hidden="true" />

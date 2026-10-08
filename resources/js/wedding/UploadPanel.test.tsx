@@ -311,4 +311,30 @@ describe('UploadPanel', () => {
     }));
     expect(JSON.stringify(report.mock.calls)).not.toContain('IMG_000');
   });
+
+  it('does not blame a reopened picker for the previous one\'s fallback timer', () => {
+    jest.useFakeTimers();
+    try {
+      mocked.findExistingHashes.mockResolvedValue(new Set());
+      mocked.uploadFile.mockResolvedValue('uploaded');
+      render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+      const input = screen.getByLabelText('Choose photos and videos');
+
+      // First picker: focus returns, then its files arrive.
+      fireEvent.click(input);
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      fireEvent.change(input, { target: { files: [photo('a.jpg')] } });
+      // A second picker opens before the first one's grace period ends.
+      fireEvent.click(input);
+      act(() => {
+        jest.advanceTimersByTime(10_000);
+      });
+
+      expect(report).not.toHaveBeenCalledWith('picker_empty', expect.anything());
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
