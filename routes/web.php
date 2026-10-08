@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Wedding\WeddingClientEventController;
 use App\Http\Controllers\Wedding\WeddingController;
 use App\Http\Controllers\Wedding\WeddingGalleryController;
 use App\Http\Controllers\Wedding\WeddingHlsController;
@@ -40,6 +41,9 @@ Route::prefix('wedding')->name('wedding.')->group(function () {
         Route::prefix('api')->group(function () {
             Route::get('/gallery', [WeddingGalleryController::class, 'index'])->name('gallery');
             Route::get('/gallery/{upload}/similar', [WeddingGalleryController::class, 'similar'])->name('gallery.similar');
+            Route::post('/client-events', [WeddingClientEventController::class, 'store'])
+                ->middleware('throttle:wedding-client-events')
+                ->name('client-events');
 
             Route::middleware('throttle:wedding-uploads')->group(function () {
                 Route::post('/uploads/check', [WeddingUploadController::class, 'check'])->name('uploads.check');

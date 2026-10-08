@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import * as api from '@/wedding/api';
 import * as uploader from '@/wedding/uploader';
 import { UploadPanel } from '@/wedding/UploadPanel';
 
@@ -13,7 +14,13 @@ jest.mock('@/wedding/uploader', () => {
   };
 });
 
+jest.mock('@/wedding/api', () => ({
+  ...jest.requireActual<typeof import('@/wedding/api')>('@/wedding/api'),
+  reportClientEvent: jest.fn(),
+}));
+
 const mocked = jest.mocked(uploader);
+const report = jest.mocked(api.reportClientEvent);
 
 const limits: uploader.UploadLimits = {
   photo_bytes: 1000,
@@ -261,6 +268,73 @@ describe('UploadPanel', () => {
       expect(screen.getByText(/A large video didn.t finish uploading last time/)).toBeInTheDocument();
     } finally {
       window.localStorage.clear();
+    }
+  });
+
+  it('says so when the picker hands back no files, and reports it', () => {
+    render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+    const input = screen.getByLabelText('Choose photos and videos');
+
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { files: [] } });
+
+    expect(screen.getByRole('status')).toHaveTextContent('No photos came through from the picker');
+    expect(report).toHaveBeenCalledWith('picker_empty', { reason: 'empty_change' });
+  });
+
+  it('treats a cancelled picker the same way', () => {
+    render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+    const input = screen.getByLabelText('Choose photos and videos');
+
+    fireEvent.click(input);
+    fireEvent(input, new Event('cancel'));
+
+    expect(screen.getByRole('status')).toHaveTextContent('No photos came through from the picker');
+    expect(report).toHaveBeenCalledWith('picker_empty', { reason: 'cancel' });
+  });
+
+  it('reports picked, refused and failed files by metadata only', async () => {
+    mocked.findExistingHashes.mockResolvedValue(new Set());
+    mocked.uploadFile.mockRejectedValue(new Error('Upload failed (HTTP 403).'));
+
+    render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+    choose([photo('IMG_0001.jpg'), new File(['x'], 'IMG_0002.DNG', { type: 'image/x-adobe-dng' })]);
+
+    expect(report).toHaveBeenCalledWith('picker_change', {
+      count: 2,
+      files: [{ type: 'image/jpeg', ext: 'jpg', size: 12 }, { type: 'image/x-adobe-dng', ext: 'dng', size: 1 }],
+    });
+    expect(report).toHaveBeenCalledWith('file_rejected', { count: 1, files: [{ type: 'image/x-adobe-dng', ext: 'dng', size: 1 }] });
+    await waitFor(() => expect(report).toHaveBeenCalledWith('upload_failed', {
+      message: 'Upload failed (HTTP 403).',
+      files: [{ type: 'image/jpeg', ext: 'jpg', size: 12 }],
+    }));
+    expect(JSON.stringify(report.mock.calls)).not.toContain('IMG_000');
+  });
+
+  it('does not blame a reopened picker for the previous one\'s fallback timer', () => {
+    jest.useFakeTimers();
+    try {
+      mocked.findExistingHashes.mockResolvedValue(new Set());
+      mocked.uploadFile.mockResolvedValue('uploaded');
+      render(<UploadPanel limits={limits} onUploaded={jest.fn()} />);
+      const input = screen.getByLabelText('Choose photos and videos');
+
+      // First picker: focus returns, then its files arrive.
+      fireEvent.click(input);
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      fireEvent.change(input, { target: { files: [photo('a.jpg')] } });
+      // A second picker opens before the first one's grace period ends.
+      fireEvent.click(input);
+      act(() => {
+        jest.advanceTimersByTime(10_000);
+      });
+
+      expect(report).not.toHaveBeenCalledWith('picker_empty', expect.anything());
+    } finally {
+      jest.useRealTimers();
     }
   });
 });

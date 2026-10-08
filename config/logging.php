@@ -65,6 +65,17 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Problems guests' browsers report from the wedding uploader (the
+        // file picker returning nothing, failed uploads). Info level
+        // regardless of LOG_LEVEL: these are the only trace of client issues.
+        'wedding_client' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/wedding-client.log'),
+            'level' => 'info',
+            'days' => 60,
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

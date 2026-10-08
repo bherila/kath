@@ -1,8 +1,9 @@
 import { Check, CircleAlert, ImagePlus, Loader2, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { describeFile, reportClientEvent } from '@/wedding/api';
 import {
   computeFileHash,
   type FileKind,
@@ -27,6 +28,16 @@ const HASH_GROUP_BYTES = 256 * 1024 * 1024;
 const PROGRESS_STEP = 0.01;
 
 const MULTIPART_SESSION_PREFIX = 'wedding-multipart:';
+
+/**
+ * How long after the page regains focus from the picker to wait for its
+ * files: iOS converts photos (and fetches iCloud originals) before handing
+ * them over, so the change event can lag the picker closing.
+ */
+const PICKER_GRACE_MS = 5_000;
+
+const PICKER_EMPTY_NOTICE =
+  'No photos came through from the picker. If you did choose some, please try again. If it keeps happening, open the photos in your Photos app first (so they download from iCloud), or use \u201cChoose File\u201d.';
 
 type ItemStatus = 'hashing' | 'queued' | 'uploading' | 'done' | 'duplicate' | 'failed' | 'unsupported';
 
@@ -108,6 +119,18 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
   const nextId = useRef(1);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [pickerNotice, setPickerNotice] = useState<string | null>(null);
+  // Set while the native picker is open, so its closing without delivering
+  // any files (a cancel, or an OS hand-off that failed) can be noticed.
+  const pickerOpen = useRef(false);
+  const pickerTimer = useRef<number | undefined>(undefined);
+  // The picker finished (or is reopening): a pending "nothing came back"
+  // check belongs to the old invocation.
+  const settlePicker = useCallback((open: boolean): void => {
+    window.clearTimeout(pickerTimer.current);
+    pickerTimer.current = undefined;
+    pickerOpen.current = open;
+  }, []);
   const [dragging, setDragging] = useState(false);
 
   const active = items.some((item) => item.status === 'hashing' || item.status === 'queued' || item.status === 'uploading');
@@ -188,7 +211,11 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
             uploadedRef.current += 1;
           }
         } catch (err) {
-          patch(id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed.' });
+          const message = err instanceof Error ? err.message : 'Upload failed.';
+          patch(id, { status: 'failed', error: message });
+          if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            reportClientEvent('upload_failed', { message, files: [describeFile(item.file)] });
+          }
         } finally {
           pendingRef.current.delete(id);
         }
@@ -228,6 +255,10 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
       };
     });
     setItems((current) => [...added, ...current]);
+    const rejected = added.filter((item) => item.status === 'unsupported');
+    if (rejected.length > 0) {
+      reportClientEvent('file_rejected', { count: rejected.length, files: rejected.slice(0, 20).map((item) => describeFile(item.file)) });
+    }
 
     // Skip anything already in the gallery, and repeats within this selection.
     const seen = new Set<string>();
@@ -303,12 +334,61 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
     };
   }, [retryAllFailed]);
 
+  const pickerReturnedNothing = useCallback((reason: string): void => {
+    settlePicker(false);
+    setPickerNotice(PICKER_EMPTY_NOTICE);
+    reportClientEvent('picker_empty', { reason });
+  }, [settlePicker]);
+
   const onInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    settlePicker(false);
     const files = Array.from(event.target.files ?? []);
     // Reset so selecting the same files again still fires a change event.
     event.target.value = '';
-    void addFiles(files);
+    if (files.length === 0) {
+      pickerReturnedNothing('empty_change');
+      return;
+    }
+    setPickerNotice(null);
+    reportClientEvent('picker_change', { count: files.length, files: files.slice(0, 20).map(describeFile) });
+    addFiles(files).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setPickerNotice(`Something went wrong preparing those files: ${message}`);
+      reportClientEvent('uploader_error', { message });
+    });
   };
+
+  // The picker closed without a change event: browsers fire `cancel` (or, on
+  // older ones, nothing but the page regaining focus).
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input === null) {
+      return;
+    }
+    const onCancel = (): void => {
+      if (pickerOpen.current) {
+        pickerReturnedNothing('cancel');
+      }
+    };
+    const onFocus = (): void => {
+      if (!pickerOpen.current) {
+        return;
+      }
+      window.clearTimeout(pickerTimer.current);
+      pickerTimer.current = window.setTimeout(() => {
+        if (pickerOpen.current) {
+          pickerReturnedNothing('no_change');
+        }
+      }, PICKER_GRACE_MS);
+    };
+    input.addEventListener('cancel', onCancel);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      input.removeEventListener('cancel', onCancel);
+      window.removeEventListener('focus', onFocus);
+      window.clearTimeout(pickerTimer.current);
+    };
+  }, [pickerReturnedNothing]);
 
   const doneCount = items.filter((item) => item.status === 'done').length;
   const duplicateCount = items.filter((item) => item.status === 'duplicate').length;
@@ -331,22 +411,32 @@ export function UploadPanel({ limits, onUploaded }: UploadPanelProps) {
         void addFiles(Array.from(event.dataTransfer.files));
       }}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept="image/*,video/*"
-        className="sr-only"
-        aria-label="Choose photos and videos"
-        onChange={onInputChange}
-      />
-      <Button type="button" size="lg" className="h-14 w-full text-base" onClick={() => inputRef.current?.click()}>
+      {/* The label is the button, so a tap lands on the file input itself:
+          iOS opens (and hands back from) the photo picker more reliably than
+          for a script-triggered click on a hidden input. */}
+      <label className={cn(buttonVariants({ size: 'lg' }), 'h-14 w-full cursor-pointer text-base has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-ring/50')}>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          className="sr-only"
+          aria-label="Choose photos and videos"
+          onClick={() => settlePicker(true)}
+          onChange={onInputChange}
+        />
         <ImagePlus className="size-5" aria-hidden="true" />
         Add photos &amp; videos
-      </Button>
+      </label>
       <p className="mt-2 text-center text-sm text-muted-foreground">
         Select as many as you like from your camera roll. Anything already shared is skipped automatically.
       </p>
+
+      {pickerNotice !== null && (
+        <p role="status" className="mt-3 rounded-md bg-muted p-3 text-sm">
+          {pickerNotice}
+        </p>
+      )}
 
       {unfinished > 0 && items.length === 0 && (
         <p className="mt-3 rounded-md bg-muted p-3 text-sm">

@@ -103,3 +103,37 @@ export interface GalleryPage {
   items: GalleryItem[];
   next_cursor: string | null;
 }
+
+export type ClientEvent = 'picker_change' | 'picker_empty' | 'file_rejected' | 'upload_failed' | 'uploader_error';
+
+export interface ClientEventDetail {
+  reason?: string;
+  message?: string;
+  count?: number;
+  /** File metadata only: never names or contents. */
+  files?: Array<{ type: string; ext: string; size: number }>;
+}
+
+/**
+ * Tell the server about a problem only this browser can see (best-effort,
+ * fire-and-forget): client-side failures otherwise leave no trace.
+ */
+export function reportClientEvent(event: ClientEvent, detail: ClientEventDetail = {}): void {
+  requestJson('POST', '/wedding/api/client-events', { event, ...detail }).catch(() => {});
+}
+
+/** Extensions worth reporting; anything else could be part of a name. */
+const MEDIA_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'avif', 'dng', 'tif', 'tiff', 'bmp', 'raw', 'cr2', 'nef', 'arw',
+  'mp4', 'm4v', 'mov', 'webm', '3gp', 'avi', 'mkv', 'hevc', 'pdf', 'zip',
+]);
+
+/** The metadata reportClientEvent sends about a file (no part of its name). */
+export function describeFile(file: File): { type: string; ext: string; size: number } {
+  const ext = file.name.includes('.') ? (file.name.split('.').pop() ?? '').toLowerCase() : '';
+  return {
+    type: file.type.slice(0, 100),
+    ext: MEDIA_EXTENSIONS.has(ext) ? ext : '',
+    size: file.size,
+  };
+}
