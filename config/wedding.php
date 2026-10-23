@@ -2,6 +2,11 @@
 
 return [
 
+    // Set only after the Event instance has adopted the existing media.
+    // Retires legacy routes and disables legacy maintenance mutations.
+    'external_url' => env('WEDDING_EXTERNAL_URL'),
+    'migration_frozen' => (bool) env('WEDDING_MIGRATION_FROZEN', false),
+
     /*
     |--------------------------------------------------------------------------
     | Storage

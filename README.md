@@ -142,6 +142,29 @@ dropping the site to the account-default PHP and 500ing every page while the
 workflow still reports success. `htaccess-append.txt` holds the handler
 block that must be appended after every deploy to avoid that trap.
 
+## Independent Event gallery
+
+The **Deploy Event gallery** workflow deploys a pinned Vora release using the
+`event-prod` GitHub environment. Kath continues to own its personal website and
+its existing manual production workflow. Upgrade the Event app by reviewing a
+PR that changes both the reusable workflow SHA and `source_ref` in
+`.github/workflows/deploy-event.yml`. Run the workflow manually after merging.
+
+Configure the environment's SSH secrets and deployment variables using Vora's
+[Event instance guide](https://github.com/bherila/vora/blob/main/docs/event-instances.md).
+Keep server configuration, credentials, and migration manifests outside this
+public repository. Existing wedding buckets may be adopted by the new instance;
+only one app may manage their uploaded media after cutover.
+
+Before transferring ownership, preserve the live database/configuration and set
+`WEDDING_MIGRATION_FROZEN=true` on the legacy site. This blocks old wedding
+requests and disables its pruning, HLS resolution, and reclustering commands.
+Import and verify originals, hidden records, and the ceremony in the new app.
+Then set `WEDDING_EXTERNAL_URL` to its HTTPS origin and refresh the configuration
+cache. Legacy pages redirect to `/events`, old API/write requests return 410
+with the new location, and legacy maintenance stays disabled. Other site pages
+continue normally. Leave these flags unset on development/test installations.
+
 ## License
 
 Private - All rights reserved

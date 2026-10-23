@@ -6,6 +6,7 @@ use App\Http\Controllers\Wedding\WeddingGalleryController;
 use App\Http\Controllers\Wedding\WeddingHlsController;
 use App\Http\Controllers\Wedding\WeddingUploadController;
 use App\Http\Middleware\EnsureWeddingGuest;
+use App\Http\Middleware\RetireWedding;
 use Illuminate\Support\Facades\Route;
 
 // Home page
@@ -25,7 +26,7 @@ Route::get('/contact', function () {
 
 // Katherine & Jack Wedding Hub. The email prompt is the only open route; the
 // rest require an email in the session (EnsureWeddingGuest).
-Route::prefix('wedding')->name('wedding.')->group(function () {
+Route::prefix('wedding')->name('wedding.')->middleware(RetireWedding::class)->group(function () {
     Route::get('/', [WeddingController::class, 'show'])->name('show');
     Route::post('/enter', [WeddingController::class, 'enter'])
         ->middleware('throttle:wedding-enter')

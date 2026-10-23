@@ -1,0 +1,16 @@
+name: Deploy Event gallery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    # Updated by a reviewed PR when adopting a new Vora release.
+    uses: bherila/vora/.github/workflows/release-instance.yml@b5386f40e8555af63beea234cec740a284909212
+    with:
+      environment: event-prod
+      source_ref: b5386f40e8555af63beea234cec740a284909212
+    secrets: inherit
