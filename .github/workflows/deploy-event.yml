@@ -9,8 +9,8 @@ permissions:
 jobs:
   release:
     # Updated by a reviewed PR when adopting a new Vora release.
-    uses: bherila/vora/.github/workflows/release-instance.yml@17a7809db668e0a5fc2fff9c23760a49e6e71a8c
+    uses: bherila/vora/.github/workflows/release-instance.yml@f404cb8835bb5518ace807d9c8bcaf3bacc811ea
     with:
       environment: event-prod
-      source_ref: 17a7809db668e0a5fc2fff9c23760a49e6e71a8c
+      source_ref: f404cb8835bb5518ace807d9c8bcaf3bacc811ea
     secrets: inherit
