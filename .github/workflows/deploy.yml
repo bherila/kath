@@ -38,6 +38,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs: test
     environment: prod
+    env:
+      PHP_BIN: /opt/cpanel/ea-php85/root/usr/bin/php
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
 
     steps:
@@ -95,6 +97,25 @@ jobs:
             composer.lock \
             ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:~/kath-laravel/
 
+      - name: Verify PHP 8.5 on server (CLI and web handler)
+        run: |
+          ssh -o StrictHostKeyChecking=yes \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "PHP_BIN='$PHP_BIN' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/kath-laravel
+          version=$("$PHP_BIN" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+          if [ "$version" != "8.5" ]; then
+            echo "CLI PHP is $version, expected 8.5" >&2
+            exit 1
+          fi
+          if ! grep -Eq '^[[:space:]]*AddHandler[[:space:]]+application/x-httpd-ea-php85[[:space:]]' public/.htaccess; then
+            echo "Live public/.htaccess does not set the ea-php85 AddHandler" >&2
+            exit 1
+          fi
+          echo "CLI PHP $version; web handler ea-php85 present"
+          REMOTE
+
       # NOTE: this site is a SUBDOMAIN on a shared cPanel account, not the account's main
       # site. The template this repo came from assumed the opposite and rebuilt the webroot
       # symlink on every deploy with:
@@ -112,4 +133,4 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes \
             ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
-            "cd ~/kath-laravel && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:clear && /opt/cpanel/ea-php85/root/usr/bin/php artisan config:cache"
+            "cd ~/kath-laravel && $PHP_BIN artisan config:clear && $PHP_BIN artisan config:cache"
