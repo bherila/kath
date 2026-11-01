@@ -40,6 +40,7 @@ jobs:
               - 'tsconfig*.json'
               - 'vite.config.*'
               - 'jest.config.*'
+              - '.oxlintrc.json'
               - 'resources/**'
               - 'tests-ts/**'
               - '.github/workflows/**'

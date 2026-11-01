@@ -1,6 +1,5 @@
 /** @type {import('@jest/types').Config.InitialOptions} */
 const config = {
-  preset: 'ts-jest',
   testEnvironment: 'jsdom',
   testMatch: ['<rootDir>/resources/js/**/*.test.ts?(x)', '<rootDir>/tests-ts/**/*.test.ts?(x)'],
   setupFilesAfterEnv: ['<rootDir>/tests-ts/jest.setup.ts'],
@@ -15,9 +14,17 @@ const config = {
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   transform: {
-    '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+    '^.+\\.(ts|tsx)$': ['@swc/jest', {
+      jsc: {
+        parser: { syntax: 'typescript', tsx: true },
+        transform: { react: { runtime: 'automatic' } },
+        target: 'es2022',
+      },
+    }],
     // ESM-only dependencies (e.g. @noble/hashes), compiled to CommonJS for Jest.
-    '^.+/node_modules/.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true, module: 'commonjs' } }],
+    '^.+/node_modules/.+\\.js$': ['@swc/jest', {
+      jsc: { parser: { syntax: 'ecmascript' }, target: 'es2022' },
+    }],
   },
 };
 
