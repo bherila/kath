@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Validation contract: @TESTING.AGENTS.md
+
 For AI coding agents working on Katherine Herila's personal website (Laravel + React/TypeScript/Vite), generated from Ben Herila's shared `x-template` starter.
 
 ## Operating principle
@@ -64,3 +66,10 @@ composer test
 ## Context budget
 
 Keep the active context focused on the files relevant to the change. Do not read the full documentation tree or load every config file on every task. Load specific controllers, services, tests, and config for the touched paths only.
+
+## Session rules
+
+- Keep workstation preferences and personal overrides out of committed files; use a local gitignored file if needed.
+- Run the changed-area gate from `TESTING.AGENTS.md` before opening a PR or pushing for review.
+- Use existing worktree wrappers and hooks if present in `.claude/`.
+- Prefer the `gh` CLI for all GitHub interactions.
