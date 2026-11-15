@@ -8,3 +8,15 @@ allowBuilds:
   esbuild: true
   spotlight-noindex: true
   unrs-resolver: true
+
+# Oxlint supplies the host for these audited pure-JS rule packages.
+# Keep peer auto-installation and peer checking enabled for all other edges.
+packageExtensions:
+  'eslint-plugin-react-hooks@7.1.1':
+    peerDependenciesMeta:
+      eslint:
+        optional: true
+  'eslint-plugin-simple-import-sort@14.0.0':
+    peerDependenciesMeta:
+      eslint:
+        optional: true

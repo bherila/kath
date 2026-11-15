@@ -1,5 +1,4 @@
 import {Laptop, Moon, Sun } from 'lucide-react';
-import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 type ThemeMode = 'system' | 'dark' | 'light';

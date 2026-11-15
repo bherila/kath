@@ -11,11 +11,16 @@
         "dev": "vite",
         "test": "jest --passWithNoTests",
         "type-check": "tsc --noEmit",
-        "lint": "oxlint --type-aware",
-        "lint:fix": "oxlint --type-aware --fix",
-        "postinstall": "node scripts/spotlight-noindex.mjs"
+        "lint": "oxlint --type-aware && pnpm run lint:unused-imports",
+        "lint:fix": "oxlint --type-aware --fix && pnpm run lint:unused-imports",
+        "postinstall": "node scripts/spotlight-noindex.mjs",
+        "lint:unused-imports": "node scripts/lint-unused-imports.mjs",
+        "lint:unused-imports:fix": "node scripts/lint-unused-imports.mjs --fix",
+        "lint:test": "node --test tools/oxlint/*.test.mjs",
+        "toolchain:check": "node scripts/check-lint-toolchain.mjs"
     },
     "devDependencies": {
+        "@biomejs/biome": "2.6.7",
         "@jest/types": "^30.5.1",
         "@swc/core": "^1.16.20",
         "@swc/jest": "^0.2.39",
@@ -32,7 +37,6 @@
         "concurrently": "^10.0.6",
         "eslint-plugin-react-hooks": "^7.1.1",
         "eslint-plugin-simple-import-sort": "^14.0.0",
-        "eslint-plugin-unused-imports": "^4.4.1",
         "jest": "^30.5.2",
         "jest-environment-jsdom": "^30.5.2",
         "laravel-vite-plugin": "^3.2.0",

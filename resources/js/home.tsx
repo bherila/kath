@@ -1,6 +1,6 @@
 import './bootstrap';
+import 'react';
 
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import MainTitle from '@/components/MainTitle';
