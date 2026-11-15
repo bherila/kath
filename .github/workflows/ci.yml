@@ -32,6 +32,8 @@ jobs:
               - '**/*.ts'
               - '**/*.tsx'
               - '**/*.js'
+              - '**/*.mjs'
+              - '**/*.cjs'
               - '**/*.jsx'
               - '**/*.css'
               - 'package.json'
@@ -41,6 +43,8 @@ jobs:
               - 'vite.config.*'
               - 'jest.config.*'
               - '.oxlintrc.json'
+              - 'biome.unused-imports.json'
+              - 'tools/oxlint/**'
               - 'resources/**'
               - 'tests-ts/**'
               - '.github/workflows/**'
@@ -104,6 +108,14 @@ jobs:
 
       - name: Prepare Laravel environment
         run: cp .env.example .env && php artisan key:generate --no-interaction --force
+
+      - name: Verify installed compiler and lint engines
+        if: needs.changes.outputs.frontend == 'true'
+        run: pnpm run toolchain:check
+
+      - name: Exercise lint diagnostics and fixes
+        if: needs.changes.outputs.frontend == 'true'
+        run: pnpm run lint:test
 
       - name: Build frontend assets
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true'

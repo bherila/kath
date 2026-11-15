@@ -95,6 +95,28 @@ pnpm run test
 pnpm run build
 ```
 
+Oxlint remains the type-aware linter, with import/export sorting and React Compiler
+config/gating hosted by its JS plugin API. Narrow optional-peer metadata keeps those
+rule packages without installing the ESLint engine. Biome 2.6.7 runs only the
+imports-only check; its formatter and assist features are disabled. Automatic JSX
+does not consume a legacy `React` binding, so this check now reports that binding
+as unused too. Reviewed cleanup retains React module initialization when necessary
+through a bare import; unused locals remain permitted.
+
+`pnpm run lint` checks both tools without editing files. `pnpm run lint:fix` applies
+Oxlint fixes and checks imports. Deliberate import removal is separate:
+`pnpm run lint:unused-imports:fix -- resources/js/path.tsx`. It requires explicit
+paths and uses Biome's unsafe removal fix only for `noUnusedImports`; inspect the
+result for comments and module initialization. Existing bare side-effect imports
+remain intact. Use `// biome-ignore lint/correctness/noUnusedImports: reason` for
+an intentional unused import.
+
+`pnpm run lint:test` exercises invalid/valid rules, severity, scopes, sorting and
+fixes. `pnpm run toolchain:check` reads active installed package manifests and lock
+identities, rejecting the ESLint engine and classic compiler aliases while allowing
+optional peer declarations and pure `eslint-*` rule/type packages. CI runs both
+after a fresh frozen-lockfile install; full validation stays in CI.
+
 ### Backend
 
 ```bash
